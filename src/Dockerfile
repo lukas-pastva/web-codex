@@ -13,11 +13,14 @@ RUN npm run build
 # --- Build backend ---
 FROM build-base AS be
 WORKDIR /app
-COPY backend/package.json backend/package-lock.json* backend/ .
-RUN npm ci || npm i
+# Install backend deps in /app/backend
+COPY backend/package.json backend/package-lock.json* ./backend/
+RUN npm --prefix backend ci || npm --prefix backend i
+# Copy backend sources
 COPY backend/ ./backend
-# Bring built FE into backend/dist/frontend
+# Bring built FE into /app/frontend/dist (backend build copies it into dist/frontend)
 COPY --from=fe /app/dist ./frontend/dist
+# Build backend (produces /app/backend/dist/server.js and bundles frontend under dist/frontend)
 RUN npm --prefix backend run build
 
 # --- Runtime ---
