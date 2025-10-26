@@ -22,8 +22,13 @@ export default function CodexTerminal({ repoPath, onClose }) {
     // Normalize progress lines conditionally to avoid overwriting
     const normalize = (s) => {
       if (!wrapRef.current) return s;
-      // 1) collapse CRLF to LF; 2) turn any remaining CR into LF to avoid overwrites
-      return s.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      // 1) collapse CRLF to LF; 2) turn any remaining CR into LF; 3) strip erase-line; 4) turn cursor reposition to newline
+      return s
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .replace(/\x1b\[[0-9;]*K/g, '')
+        .replace(/\x1b\[[0-9;]*[GHF]/g, '\n')
+        .replace(/\x1b\[[0-9;]*[ABCD]/g, '\n');
     };
     ws.onmessage = (ev) => {
       let s = typeof ev.data === 'string' ? ev.data : String(ev.data);
@@ -60,10 +65,11 @@ export default function CodexTerminal({ repoPath, onClose }) {
               }}
             >A-</button>
             <button
-              className="secondary icon"
+              className={"secondary icon " + (wrapCR ? 'active' : '')}
               style={{ marginLeft: 6 }}
               onClick={() => setWrapCR(v => !v)}
               title={`Wrap progress lines (CR→LF): ${wrapCR ? 'on' : 'off'}`}
+              aria-pressed={wrapCR}
             >⤶</button>
           </span>
         </div>
