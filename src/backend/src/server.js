@@ -418,8 +418,8 @@ app.get("/api/git/log", async (req, res) => {
   }
 });
 
-// ---- Serve frontend build ----
-const frontendDir = path.join(__dirname, "../frontend/dist");
+// ---- Serve frontend build (placed by backend build into dist/frontend) ----
+const frontendDir = path.join(__dirname, "frontend");
 if (fs.existsSync(frontendDir)) {
   app.use("/", express.static(frontendDir));
   app.get("*", (req, res) => res.sendFile(path.join(frontendDir, "index.html")));
