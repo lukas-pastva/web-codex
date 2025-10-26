@@ -1,5 +1,9 @@
+# --- Shared build deps ---
+FROM node:20-alpine AS build-base
+RUN apk add --no-cache bash git g++ make python3 linux-headers
+
 # --- Build frontend ---
-FROM node:20-alpine AS fe
+FROM build-base AS fe
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json* frontend/ .
 RUN npm ci || npm i
@@ -7,7 +11,7 @@ COPY frontend/ .
 RUN npm run build
 
 # --- Build backend ---
-FROM node:20-alpine AS be
+FROM build-base AS be
 WORKDIR /app
 COPY backend/package.json backend/package-lock.json* backend/ .
 RUN npm ci || npm i
