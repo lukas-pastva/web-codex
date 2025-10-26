@@ -257,6 +257,7 @@ app.post("/api/git/commitPush", async (req, res) => {
 app.get("/api/git/status", async (req, res) => {
   try {
     const repoPath = req.query.repoPath;
+    if (!repoPath) return res.status(400).json({ error: "repoPath is required" });
     const git = simpleGit(repoPath);
     const st = await git.status();
     res.json({ ok: true, status: st });
@@ -269,6 +270,7 @@ app.get("/api/git/status", async (req, res) => {
 app.get("/api/git/diff", async (req, res) => {
   try {
     const repoPath = req.query.repoPath;
+    if (!repoPath) return res.status(400).json({ error: "repoPath is required" });
     const git = simpleGit(repoPath);
     const diff = await git.raw(["diff"]);
     res.json({ ok: true, diff });
@@ -327,6 +329,7 @@ app.post("/api/cli/patch", async (req, res) => {
 app.get("/api/git/status", async (req, res) => {
   try {
     const repoPath = req.query.repoPath;
+    if (!repoPath) return res.status(400).json({ error: "repoPath is required" });
     const git = simpleGit(repoPath);
     const st = await git.status();
     res.json({ ok: true, status: st });
@@ -339,6 +342,7 @@ app.get("/api/git/status", async (req, res) => {
 app.get("/api/git/diff", async (req, res) => {
   try {
     const repoPath = req.query.repoPath;
+    if (!repoPath) return res.status(400).json({ error: "repoPath is required" });
     const git = simpleGit(repoPath);
     const diff = await git.raw(["diff"]);
     res.json({ ok: true, diff });

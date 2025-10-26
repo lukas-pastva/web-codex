@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import CodexTerminal from "./Terminal.jsx";
 import FileTree from "./FileTree.jsx";
@@ -57,7 +57,7 @@ function RepoList({ repos, onSelect, favs, toggleFav, query, setQuery }) {
   )
 }
 
-function RepoActions({ repo, meta, setMeta, openaiEnabled, cliPatchEnabled }) {
+function RepoActions({ repo, meta, setMeta, openaiEnabled, cliPatchEnabled, onToggleHelp }) {
   const toast = useToast();
   const [branches, setBranches] = useState([]);
   const [current, setCurrent] = useState("");
@@ -84,17 +84,20 @@ function RepoActions({ repo, meta, setMeta, openaiEnabled, cliPatchEnabled }) {
   };
 
   useEffect(() => {
-    const onKey=(e)=>{
-      if (e.key==='/'){ e.preventDefault(); const el=document.getElementById('repo-search'); el&&el.focus(); }
-      if (e.key==='p'){ e.preventDefault(); doPull(); }
-      if (e.key==='b'){ e.preventDefault(); const el=document.getElementById('branch-select'); el&&el.focus(); }
-      if (e.key==='t'){ e.preventDefault(); setShowTerm(s=>!s); }
-      if (e.key==='d'){ e.preventDefault(); refreshDiff(); }
-      if (e.key==='?'){ e.preventDefault(); setShowHelp(h=>!h); }
-      if (e.key==='c'){ e.preventDefault(); doApplyCommitPush(); }
+    const onKey = (e) => {
+      const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+      const typing = e.target?.isContentEditable || ['input','textarea','select','button'].includes(tag);
+      if (typing) return; // ignore shortcuts while typing / interacting with controls
+      if (e.key === '/') { e.preventDefault(); const el = document.getElementById('repo-search'); el && el.focus(); }
+      if (e.key === 'p') { e.preventDefault(); doPull(); }
+      if (e.key === 'b') { e.preventDefault(); const el = document.getElementById('branch-select'); el && el.focus(); }
+      if (e.key === 't') { e.preventDefault(); setShowTerm(s => !s); }
+      if (e.key === 'd') { e.preventDefault(); refreshDiff(); }
+      if (e.key === '?') { e.preventDefault(); onToggleHelp && onToggleHelp(); }
+      if (e.key === 'c') { e.preventDefault(); doApplyCommitPush(); }
     };
     window.addEventListener('keydown', onKey);
-    return ()=>window.removeEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   useEffect(() => {
@@ -117,9 +120,18 @@ function RepoActions({ repo, meta, setMeta, openaiEnabled, cliPatchEnabled }) {
   };
 
   const refreshDiff = async () => {
+    if (!meta.repoPath) return;
     const r = await axios.get("/api/git/diff", { params: { repoPath: meta.repoPath } });
     setPatch(r.data.diff || "");
   };
+
+  // Auto refresh diff
+  useEffect(() => {
+    if (!autoRefresh || !meta.repoPath) return;
+    const ms = Math.max(2000, Number(refreshSeconds) * 1000 || 5000);
+    const id = setInterval(() => { refreshDiff().catch(()=>{}); }, ms);
+    return () => clearInterval(id);
+  }, [autoRefresh, refreshSeconds, meta.repoPath]);
 
   const doAI = async () => {
     setPatch("");
@@ -207,7 +219,7 @@ function RepoActions({ repo, meta, setMeta, openaiEnabled, cliPatchEnabled }) {
 }
 
 export default function App() {
-  const [phase, setPhase] = useState("intro"); // intro -> repos
+  const [phase, setPhase] = useState("intro"); // intro | repos
   const [openaiEnabled, setOpenaiEnabled] = useState(false);
   const [cliPatchEnabled, setCliPatchEnabled] = useState(false);
   const [providers, setProviders] = useState({ github: {}, gitlab: {} });
@@ -219,6 +231,66 @@ export default function App() {
   const [currentRepo, setCurrentRepo] = useState(null);
   const [meta, setMeta] = useState({ repoPath: "" });
   const [themeMode, setThemeMode] = useState(() => localStorage.getItem('themeMode') || 'auto'); // auto | dark | light
+  const routeRef = useRef({});
+  const [pendingRepoId, setPendingRepoId] = useState("");
+
+  // --- Simple hash router ---
+  function parseHash() {
+    const h = (location.hash || '').replace(/^#/, '');
+    if (!h) return { page: 'intro' };
+    const [page, qs] = h.split('?');
+    const params = {};
+    if (qs) {
+      for (const part of qs.split('&')) {
+        const [k, v=''] = part.split('=');
+        params[decodeURIComponent(k)] = decodeURIComponent(v);
+      }
+    }
+    return { page: page || 'intro', params };
+  }
+  function buildHash(next) {
+    const { page = 'intro', params = {} } = next || {};
+    const qs = Object.entries(params)
+      .filter(([,v]) => v !== undefined && v !== '' && v !== null)
+      .map(([k,v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      .join('&');
+    return `#${page}${qs ? '?' + qs : ''}`;
+  }
+  function updateHashFromState(p = phase, cur = current, repo = currentRepo) {
+    const params = {};
+    if (p === 'repos') {
+      const [prov, key] = (cur||'').split(':');
+      if (prov) params.provider = prov;
+      if (key) params.key = key;
+      if (repo) {
+        const id = repo.full_name || repo.path_with_namespace || repo.name;
+        if (id) params.repo = id;
+      }
+    }
+    const target = buildHash({ page: p, params });
+    if (location.hash !== target) location.hash = target;
+  }
+  function applyRoute(route) {
+    routeRef.current = route;
+    const { page, params } = route;
+    setPhase(page === 'repos' ? 'repos' : 'intro');
+    if (page === 'repos') {
+      const prov = params?.provider;
+      const key = params?.key;
+      if (prov && key) setCurrent(`${prov}:${key}`);
+      const rid = params?.repo || '';
+      if (!rid) { setCurrentRepo(null); setMeta({ repoPath: '' }); setPendingRepoId(''); }
+      else setPendingRepoId(rid);
+    }
+  }
+
+  // Initial route parse
+  useEffect(() => {
+    applyRoute(parseHash());
+    const onHash = () => applyRoute(parseHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('themeMode', themeMode);
@@ -237,11 +309,46 @@ export default function App() {
   const load = async () => {
     const r = await axios.get("/api/providers");
     setProviders(r.data);
-    const gh = Object.keys(r.data.github || {})[0];
-    const gl = Object.keys(r.data.gitlab || {})[0];
-    const first = gh ? `github:${gh}` : (gl ? `gitlab:${gl}` : "");
-    if (first) setCurrent(first);
+    const route = routeRef.current || {};
+    const prov = route.params?.provider;
+    const key = route.params?.key;
+    const repoId = route.params?.repo;
+    if (prov && key) setCurrent(`${prov}:${key}`);
+    else {
+      const gh = Object.keys(r.data.github || {})[0];
+      const gl = Object.keys(r.data.gitlab || {})[0];
+      const first = gh ? `github:${gh}` : (gl ? `gitlab:${gl}` : "");
+      if (first) setCurrent(first);
+    }
+    // If route includes a repo, open it after providers load
+    if (prov && key && (repoId || pendingRepoId)) {
+      const want = repoId || pendingRepoId;
+      const group = r.data[prov]?.[key] || [];
+      const match = group.find(item => (item.full_name || item.path_with_namespace || item.name) === want);
+      if (match) {
+        await openRepo(match, prov, key); // pass explicit to avoid race with current
+        setPendingRepoId('');
+      }
+    }
   };
+
+  // If route changes after providers already loaded, try to open/close accordingly
+  useEffect(() => {
+    const route = routeRef.current || {};
+    if (phase !== 'repos') return;
+    const prov = route.params?.provider;
+    const key = route.params?.key;
+    const rid = route.params?.repo || pendingRepoId;
+    if (!prov || !key) return;
+    const group = providers[prov]?.[key] || [];
+    if (!rid) {
+      setCurrentRepo(null); setMeta({ repoPath: '' }); return;
+    }
+    const match = group.find(item => (item.full_name || item.path_with_namespace || item.name) === rid);
+    if (match && (!currentRepo || (currentRepo.full_name||currentRepo.path_with_namespace||currentRepo.name)!==rid)) {
+      openRepo(match, prov, key).then(()=> setPendingRepoId('')).catch(()=>{});
+    }
+  }, [providers, current, phase, pendingRepoId]);
   useEffect(() => { fetchConfig(); }, []);
   useEffect(() => { if (phase === "repos") load(); }, [phase]);
 
@@ -252,16 +359,23 @@ export default function App() {
     return group;
   }, [providers, current]);
 
-  const openRepo = async (repo) => {
+  const openRepo = async (repo, providerOverride, keyOverride) => {
     setCurrentRepo(repo);
     // Derive provider & owner from full_name/path
-    const [provider, key] = current.split(":");
+    const [providerAuto, keyAuto] = (current || '').split(":");
+    const provider = providerOverride || providerAuto;
+    const key = keyOverride || keyAuto;
     const owner = (repo.full_name || repo.path_with_namespace || "").split("/")[0];
     const name = repo.name;
     const clone_url = repo.clone_url || repo.http_url_to_repo;
     const r = await axios.post("/api/git/clone", { provider, owner, name, clone_url });
     setMeta({ repoPath: r.data.repoPath, provider, owner, name, clone_url });
   };
+
+  // Keep URL in sync with state for bookmarking
+  useEffect(() => {
+    updateHashFromState();
+  }, [phase, current, currentRepo]);
 
   return (
     <div>
@@ -270,6 +384,11 @@ export default function App() {
         <div className="tag">all-in-one</div>
         <div className="tag">OpenAI-powered</div>
         <div style={{marginLeft:'auto', display:'flex', gap:8, alignItems:'center'}}>
+          <button
+            className="secondary icon"
+            onClick={() => setShowHelp(true)}
+            title={"Shortcuts: / search, p pull, b branch, t terminal, d diff, c commit. Disabled while typing. Press ? for full help."}
+          >⌨️</button>
           <button className="secondary icon" onClick={cycleTheme} title={`Theme: ${themeMode}`}>{themeIcon}</button>
         </div>
       </header>
@@ -299,11 +418,19 @@ export default function App() {
                 setQuery={setQuery}
               />
             ) : (
-              <RepoActions repo={currentRepo} meta={meta} setMeta={setMeta} openaiEnabled={openaiEnabled} cliPatchEnabled={cliPatchEnabled} />
+              <RepoActions
+                repo={currentRepo}
+                meta={meta}
+                setMeta={setMeta}
+                openaiEnabled={openaiEnabled}
+                cliPatchEnabled={cliPatchEnabled}
+                onToggleHelp={() => setShowHelp(h => !h)}
+              />
             )}
           </>
         )}
       </div>
+      <HelpModal open={showHelp} onClose={() => setShowHelp(false)} />
     </div>
   );
 }

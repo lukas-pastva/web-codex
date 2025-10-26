@@ -33,7 +33,7 @@ export default function CodexTerminal({ repoPath, onClose }) {
               onClick={() => {
                 const t = termRef.current; if (!t) return;
                 const cur = Number(t.options?.fontSize || 14);
-                t.options = { ...t.options, fontSize: cur + 1 };
+                t.options.fontSize = cur + 1;
               }}
             >A+</button>
             <button
@@ -43,7 +43,7 @@ export default function CodexTerminal({ repoPath, onClose }) {
                 const t = termRef.current; if (!t) return;
                 const cur = Number(t.options?.fontSize || 14);
                 const next = Math.max(10, cur - 1);
-                t.options = { ...t.options, fontSize: next };
+                t.options.fontSize = next;
               }}
             >A-</button>
           </span>
