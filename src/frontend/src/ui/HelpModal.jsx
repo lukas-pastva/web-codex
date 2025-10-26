@@ -10,7 +10,6 @@ export default function HelpModal({ open, onClose }) {
           <button className="secondary" onClick={onClose}>Close</button>
         </div>
         <ul>
-          <li><code>/</code> — focus repo search</li>
           <li><code>p</code> — git pull</li>
           <li><code>b</code> — focus branch dropdown</li>
           <li><code>t</code> — toggle terminal</li>

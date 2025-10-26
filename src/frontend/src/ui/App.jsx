@@ -29,19 +29,15 @@ function GroupTabs({ providers, current, setCurrent }) {
   );
 }
 
-function RepoList({ repos, onSelect, favs, toggleFav, query, setQuery }) {
+function RepoList({ repos, onSelect, favs, toggleFav }) {
   const sorted = [...repos].sort((a,b)=>{
     const af = favs.includes(a.full_name||a.path_with_namespace);
     const bf = favs.includes(b.full_name||b.path_with_namespace);
     return af===bf ? 0 : (af?-1:1);
   });
-  const filtered = sorted.filter(r => (r.full_name||r.path_with_namespace||r.name).toLowerCase().includes((query||'').toLowerCase()));
   return (
     <div className="pane">
-      <div className="actions" style={{marginBottom:8}}>
-        <input id="repo-search" placeholder="Search repos…" value={query} onChange={e=>setQuery(e.target.value)} />
-      </div>
-      {filtered.map((r, i) => (
+      {sorted.map((r, i) => (
         <div key={i} className="repo" onClick={() => onSelect(r)} style={{cursor:'pointer'}}>
           <div>
             <div><strong>{r.name}</strong></div>
@@ -67,7 +63,7 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
   const [showPretty, setShowPretty] = useState(false);
   const [openFile, setOpenFile] = useState(null);
   const [openFileContent, setOpenFileContent] = useState("");
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshSeconds, setRefreshSeconds] = useState(5);
   const [showTerm, setShowTerm] = useState(true);
 
@@ -87,7 +83,6 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
       const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
       const typing = e.target?.isContentEditable || ['input','textarea','select','button'].includes(tag);
       if (typing) return; // ignore shortcuts while typing / interacting with controls
-      if (e.key === '/') { e.preventDefault(); const el = document.getElementById('repo-search'); el && el.focus(); }
       if (e.key === 'p') { e.preventDefault(); doPull(); }
       if (e.key === 'b') { e.preventDefault(); const el = document.getElementById('branch-select'); el && el.focus(); }
       if (e.key === 't') { e.preventDefault(); setShowTerm(s => !s); }
@@ -181,16 +176,15 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
 
         <FileTree repoPath={meta.repoPath} onOpen={async (p)=>{ const r=await axios.get("/api/git/file",{params:{repoPath:meta.repoPath,path:p}}); setOpenFile(p); setOpenFileContent(r.data.text||""); }} />
         <div className="pane" style={{marginTop:16}}>
-          <div className="muted">Last 30 commits</div>
+          <div className="muted">Last 10 commits</div>
           <div className="commit-list">
-            {log.map(c => (
+            {log.slice(0,10).map(c => (
               <div key={c.hash} className="repo">
                 <div>
                   <div><strong>{c.message}</strong></div>
                   <div className="muted">{c.hash.slice(0,8)} · {new Date(c.date).toLocaleString()}</div>
                 </div>
                 <div style={{display:'flex', gap:8, alignItems:'center'}}>
-                  {c.web_url ? <a href={c.web_url} target="_blank">open</a> : <span className="tag">no link</span>}
                   <button className="secondary" onClick={() => copyHash(c.hash)} title="Copy full commit hash">copy hash</button>
                 </div>
               </div>
@@ -224,7 +218,6 @@ export default function App() {
   const [openaiEnabled, setOpenaiEnabled] = useState(false);
   const [cliPatchEnabled, setCliPatchEnabled] = useState(false);
   const [providers, setProviders] = useState({ github: {}, gitlab: {} });
-  const [query, setQuery] = useState("");
   const [favs, setFavs] = useState(() => JSON.parse(localStorage.getItem("favs")||"[]"));
   const [showHelp, setShowHelp] = useState(false);
   const [activePane, setActivePane] = useState("actions"); // actions | terminal | diff | files
@@ -232,6 +225,7 @@ export default function App() {
   const [currentRepo, setCurrentRepo] = useState(null);
   const [meta, setMeta] = useState({ repoPath: "" });
   const [themeMode, setThemeMode] = useState(() => localStorage.getItem('themeMode') || 'auto'); // auto | dark | light
+  const [loadingRepos, setLoadingRepos] = useState(false);
   const routeRef = useRef({});
   const [pendingRepoId, setPendingRepoId] = useState("");
 
@@ -322,28 +316,33 @@ export default function App() {
   };
 
   const load = async () => {
-    const r = await axios.get("/api/providers");
-    setProviders(r.data);
-    const route = routeRef.current || {};
-    const prov = route.params?.provider;
-    const key = route.params?.key;
-    const repoId = route.params?.repo;
-    if (prov && key) setCurrent(`${prov}:${key}`);
-    else {
-      const gh = Object.keys(r.data.github || {})[0];
-      const gl = Object.keys(r.data.gitlab || {})[0];
-      const first = gh ? `github:${gh}` : (gl ? `gitlab:${gl}` : "");
-      if (first) setCurrent(first);
-    }
-    // If route includes a repo, open it after providers load
-    if (prov && key && (repoId || pendingRepoId)) {
-      const want = repoId || pendingRepoId;
-      const group = r.data[prov]?.[key] || [];
-      const match = group.find(item => (item.full_name || item.path_with_namespace || item.name) === want);
-      if (match) {
-        await openRepo(match, prov, key); // pass explicit to avoid race with current
-        setPendingRepoId('');
+    setLoadingRepos(true);
+    try {
+      const r = await axios.get("/api/providers");
+      setProviders(r.data);
+      const route = routeRef.current || {};
+      const prov = route.params?.provider;
+      const key = route.params?.key;
+      const repoId = route.params?.repo;
+      if (prov && key) setCurrent(`${prov}:${key}`);
+      else {
+        const gh = Object.keys(r.data.github || {})[0];
+        const gl = Object.keys(r.data.gitlab || {})[0];
+        const first = gh ? `github:${gh}` : (gl ? `gitlab:${gl}` : "");
+        if (first) setCurrent(first);
       }
+      // If route includes a repo, open it after providers load
+      if (prov && key && (repoId || pendingRepoId)) {
+        const want = repoId || pendingRepoId;
+        const group = r.data[prov]?.[key] || [];
+        const match = group.find(item => (item.full_name || item.path_with_namespace || item.name) === want);
+        if (match) {
+          await openRepo(match, prov, key); // pass explicit to avoid race with current
+          setPendingRepoId('');
+        }
+      }
+    } finally {
+      setLoadingRepos(false);
     }
   };
 
@@ -418,7 +417,7 @@ export default function App() {
           <button
             className="secondary icon"
             onClick={() => setShowHelp(true)}
-            title={"Shortcuts: / search, p pull, b branch, t terminal, d diff, c commit. Disabled while typing. Press ? for full help."}
+            title={"Shortcuts: p pull, b branch, t terminal, d diff, c commit. Disabled while typing. Press ? for full help."}
           >⌨️</button>
           <button className="secondary icon" onClick={cycleTheme} title={`Theme: ${themeMode}`}>{themeIcon}</button>
         </div>
@@ -440,14 +439,16 @@ export default function App() {
           <>
             <GroupTabs providers={providers} current={current} setCurrent={setCurrent} />
             {!currentRepo ? (
-              <RepoList
-                repos={reposForCurrent}
-                onSelect={openRepo}
-                favs={favs}
-                toggleFav={(full)=>{const next=favs.includes(full)?favs.filter(f=>f!==full):[...favs,full]; setFavs(next); localStorage.setItem('favs', JSON.stringify(next));}}
-                query={query}
-                setQuery={setQuery}
-              />
+              loadingRepos ? (
+                <div className="pane"><div className="muted">Loading repos…</div></div>
+              ) : (
+                <RepoList
+                  repos={reposForCurrent}
+                  onSelect={openRepo}
+                  favs={favs}
+                  toggleFav={(full)=>{const next=favs.includes(full)?favs.filter(f=>f!==full):[...favs,full]; setFavs(next); localStorage.setItem('favs', JSON.stringify(next));}}
+                />
+              )
             ) : (
               <>
                 <div className="pane" style={{marginBottom:12}}>
