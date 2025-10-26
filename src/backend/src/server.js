@@ -242,8 +242,10 @@ app.post("/api/cli/patch", async (req, res) => {
       const exec = spawnSync("bash", ["-lc", cmd], { cwd: tmpDir, env: process.env, encoding: "utf-8", maxBuffer: 10*1024*1024 });
       const stdout = exec.stdout || "";
       const stderr = exec.stderr || "";
-      if (exec.status not in [0, None]):
-          console.warn("CLI patch non-zero exit:", exec.status, stderr.substring(0,500));
+      // Warn if the CLI exited with a non-zero status (ignore 0 and null/signal cases)
+      if (exec.status !== 0 && exec.status !== null) {
+        console.warn("CLI patch non-zero exit:", exec.status, stderr.substring(0, 500));
+      }
       // Capture diff
       const tmpGit = simpleGit(tmpDir);
       const diff = await tmpGit.raw(["diff"]);
