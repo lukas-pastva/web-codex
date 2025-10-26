@@ -113,14 +113,13 @@ function RepoActions({ repo, meta, setMeta }) {
   const doCheckout = async (b) => {
     await axios.post("/api/git/checkout", { repoPath: meta.repoPath, branch: b });
     await loadBranches();
+    await loadStatus?.();
+    await refreshDiff?.();
   };
 
   const refreshDiff = async () => {
     const r = await axios.get("/api/git/diff", { params: { repoPath: meta.repoPath } });
     setPatch(r.data.diff || "");
-  };
-    await axios.post("/api/git/checkout", { repoPath: meta.repoPath, branch: b });
-    await loadBranches();
   };
 
   const doAI = async () => {
