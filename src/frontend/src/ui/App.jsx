@@ -66,6 +66,7 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshSeconds, setRefreshSeconds] = useState(5);
   const [pullInfo, setPullInfo] = useState({ at: null, upToDate: null, behind: 0 });
+  const [pushing, setPushing] = useState(false);
   const [showCommitCount, setShowCommitCount] = useState(1);
 
   const loadBranches = async () => {
@@ -105,6 +106,7 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
       loadBranches();
       refreshLog();
       refreshStatus();
+      refreshDiff();
     }
   }, [meta.repoPath]);
 
@@ -140,10 +142,19 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
   }, [autoRefresh, refreshSeconds, meta.repoPath]);
 
   const doApplyCommitPush = async () => {
-    await axios.post("/api/git/commitPush", { repoPath: meta.repoPath, message });
-    await refreshLog();
-    await refreshDiff();
-    toast("Pushed ✅");
+    try {
+      setPushing(true);
+      await axios.post("/api/git/commitPush", { repoPath: meta.repoPath, message });
+      await refreshLog();
+      await refreshDiff();
+      toast && toast("Pushed ✅");
+    } catch (e) {
+      const msg = e?.response?.data?.error || e?.message || "Push failed";
+      try { toast && toast(`Push failed: ${msg}`); } catch {}
+      try { alert(`Push failed: ${msg}`); } catch {}
+    } finally {
+      setPushing(false);
+    }
   };
 
   const copyHash = async (hash) => {
@@ -182,7 +193,11 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
               {branches.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
             <input placeholder="commit message" value={message} onChange={e=>setMessage(e.target.value)} style={{minWidth:220}}/>
-            <button onClick={doApplyCommitPush}>Apply & Push</button>
+            {(() => { const canPush = Boolean((patch||"").trim()); return (
+              <button onClick={doApplyCommitPush} disabled={!canPush || pushing} style={(!canPush || pushing) ? {opacity:0.6, cursor:'not-allowed'} : {}}>
+                {pushing ? '⏳ Pushing…' : 'Apply & Push'}
+              </button>
+            );})()}
           </div>
         </div>
 
