@@ -58,6 +58,9 @@ If the model emits an invalid patch, you can retry with a clearer instruction.
 - `PORT` — HTTP listen port. Default: `8080`.
 - `DATA_DIR` — Root for repository storage. Default: `/data/repos`. Mount `/data` to persist.
 
+- Debugging:
+  - `DEBUG` — set to `1`, `true`, or `debug` to enable verbose backend logs (Axios request URLs, per‑provider errors, clone details). Sensitive tokens are redacted in logs.
+
 - GitHub:
   - `GH_TOKEN` — Personal access token. Required to list repos and push.
   - `GH_USER` — GitHub username. Optional when `GH_TOKEN` is set; if omitted, auto‑detects.
@@ -99,6 +102,8 @@ GL_BASE_URL=https://gitlab.com
 GL_GROUPS=mygroup
 # Optional for CLI patch
 # CODEX_PATCH_CMD=codex < {{instruction_file}}
+# Debugging
+DEBUG=1
 ```
 
 ## Caveats / Next steps

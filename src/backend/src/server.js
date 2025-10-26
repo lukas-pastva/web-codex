@@ -20,9 +20,27 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json({ limit: "10mb" }));
 
+// ---- Debug helpers ----
+const DEBUG = ["1", "true", "yes", "on", "debug", "verbose"].includes(String(process.env.DEBUG || "").toLowerCase());
+function dlog(...args) { if (DEBUG) console.log("[debug]", ...args); }
+function jstr(obj) {
+  try {
+    if (typeof obj === "string") return obj;
+    return JSON.stringify(obj);
+  } catch { return String(obj); }
+}
+function formatErr(err) {
+  const status = err?.response?.status;
+  const code = err?.code;
+  const msg = err?.message;
+  const data = err?.response?.data;
+  const body = data ? jstr(data) : "";
+  return redact([status, code, msg, body].filter(Boolean).join(" "));
+}
+
 // Config endpoint
 app.get("/api/config", (req, res) => {
-  res.json({ openai: Boolean(OPENAI_API_KEY), cliPatch: Boolean(process.env.CODEX_PATCH_CMD) });
+  res.json({ openai: Boolean(OPENAI_API_KEY), cliPatch: Boolean(process.env.CODEX_PATCH_CMD), debug: DEBUG });
 });
 
 // ---- Configuration ----
@@ -65,6 +83,7 @@ async function ensureClone(provider, owner, name, cloneUrl) {
     const parent = path.dirname(repoPath);
     fs.mkdirSync(parent, { recursive: true });
     const remoteWithToken = injectTokenIntoUrl(cloneUrl);
+    dlog("git clone", redact(remoteWithToken), "→", repoPath);
     await simpleGit(parent).clone(remoteWithToken, path.basename(repoPath));
   }
   return repoPath;
@@ -74,7 +93,8 @@ function injectTokenIntoUrl(url) {
   try {
     const u = new URL(url);
     if (u.hostname.includes("github.com") && GH_TOKEN) {
-      u.username = "oauth2";
+      // For GitHub, use PAT as password; username can be the real username or 'x-access-token'
+      u.username = GH_USER || "x-access-token";
       u.password = GH_TOKEN;
     } else if (u.hostname.includes("gitlab") && GL_TOKEN) {
       // GitLab: use oauth2:<token>@
@@ -93,33 +113,62 @@ function redact(str) {
 
 // ---- Providers: fetch repos ----
 app.get("/api/providers", async (req, res) => {
+  const out = { github: {}, gitlab: {}, _errors: [] };
   try {
-    const out = { github: {}, gitlab: {} };
     // GitHub repos: user + orgs
     if (GH_TOKEN) {
       const ghHeaders = { Authorization: `Bearer ${GH_TOKEN}`, Accept: "application/vnd.github+json" };
-      const ghUser = GH_USER || (await axios.get("https://api.github.com/user", { headers: ghHeaders })).data.login;
-      const userRepos = (await axios.get("https://api.github.com/user/repos?per_page=100", { headers: ghHeaders })).data;
-      out.github[ghUser] = userRepos.map(r => ({ name: r.name, full_name: r.full_name, default_branch: r.default_branch, clone_url: r.clone_url, ssh_url: r.ssh_url, html_url: r.html_url, private: r.private }));
-      for (const org of GH_ORGS) {
-        const orgRepos = (await axios.get(`https://api.github.com/orgs/${org}/repos?per_page=100`, { headers: ghHeaders })).data;
-        out.github[org] = orgRepos.map(r => ({ name: r.name, full_name: r.full_name, default_branch: r.default_branch, clone_url: r.clone_url, ssh_url: r.ssh_url, html_url: r.html_url, private: r.private }));
+      try {
+        dlog("GitHub: fetching /user");
+        const ghUser = GH_USER || (await axios.get("https://api.github.com/user", { headers: ghHeaders })).data.login;
+        dlog("GitHub user:", ghUser);
+        const userUrl = "https://api.github.com/user/repos?per_page=100";
+        dlog("GET", userUrl);
+        const userRepos = (await axios.get(userUrl, { headers: ghHeaders })).data;
+        out.github[ghUser] = userRepos.map(r => ({ name: r.name, full_name: r.full_name, default_branch: r.default_branch, clone_url: r.clone_url, ssh_url: r.ssh_url, html_url: r.html_url, private: r.private }));
+        for (const org of GH_ORGS) {
+          try {
+            const orgUrl = `https://api.github.com/orgs/${org}/repos?per_page=100`;
+            dlog("GET", orgUrl);
+            const orgRepos = (await axios.get(orgUrl, { headers: ghHeaders })).data;
+            out.github[org] = orgRepos.map(r => ({ name: r.name, full_name: r.full_name, default_branch: r.default_branch, clone_url: r.clone_url, ssh_url: r.ssh_url, html_url: r.html_url, private: r.private }));
+          } catch (e) {
+            console.error("providers: GitHub org repos failed:", formatErr(e));
+            out._errors.push({ provider: "github", scope: "org", org, error: formatErr(e) });
+          }
+        }
+      } catch (e) {
+        console.error("providers: GitHub user fetch failed:", formatErr(e));
+        out._errors.push({ provider: "github", scope: "user", error: formatErr(e) });
       }
+    } else {
+      dlog("GitHub disabled: GH_TOKEN not set");
     }
+
     // GitLab repos: groups
     if (GL_TOKEN && GL_GROUPS.length) {
       const glHeaders = { "Private-Token": GL_TOKEN };
       for (const grp of GL_GROUPS) {
-        const encoded = encodeURIComponent(grp);
-        const url = `${GL_BASE_URL}/api/v4/groups/${encoded}/projects?per_page=100`;
-        const projects = (await axios.get(url, { headers: glHeaders })).data;
-        out.gitlab[grp] = projects.map(p => ({ id: p.id, name: p.path, full_name: p.path_with_namespace, default_branch: p.default_branch, clone_url: p.http_url_to_repo, ssh_url: p.ssh_url_to_repo, web_url: p.web_url, private: !p.public }));
+        try {
+          const encoded = encodeURIComponent(grp);
+          const url = `${GL_BASE_URL}/api/v4/groups/${encoded}/projects?per_page=100`;
+          dlog("GET", url);
+          const projects = (await axios.get(url, { headers: glHeaders })).data;
+          out.gitlab[grp] = projects.map(p => ({ id: p.id, name: p.path, full_name: p.path_with_namespace, default_branch: p.default_branch, clone_url: p.http_url_to_repo, ssh_url: p.ssh_url_to_repo, web_url: p.web_url, private: !p.public }));
+        } catch (e) {
+          console.error("providers: GitLab group projects failed:", formatErr(e));
+          out._errors.push({ provider: "gitlab", scope: "group", group: grp, error: formatErr(e) });
+        }
       }
+    } else {
+      if (!GL_TOKEN) dlog("GitLab disabled: GL_TOKEN not set");
+      else if (!GL_GROUPS.length) dlog("GitLab disabled: GL_GROUPS not set");
     }
+
     res.json(out);
   } catch (err) {
-    console.error("providers error:", err.response?.status, redact(err.response?.data) || err.message);
-    res.status(500).json({ error: "Failed to fetch providers", details: err.message });
+    console.error("providers fatal error:", formatErr(err));
+    res.status(500).json({ error: "Failed to fetch providers", details: formatErr(err) });
   }
 });
 
@@ -127,11 +176,12 @@ app.get("/api/providers", async (req, res) => {
 app.post("/api/git/clone", async (req, res) => {
   try {
     const { provider, owner, name, clone_url } = req.body;
+    dlog("clone request:", { provider, owner, name, clone_url: redact(clone_url) });
     const repoPath = await ensureClone(provider, owner, name, clone_url);
     res.json({ ok: true, repoPath });
   } catch (err) {
-    console.error("clone error:", err.message);
-    res.status(500).json({ error: err.message });
+    console.error("clone error:", formatErr(err));
+    res.status(500).json({ error: formatErr(err) });
   }
 });
 
@@ -143,6 +193,7 @@ app.post("/api/git/pull", async (req, res) => {
     const result = await git.pull();
     res.json({ ok: true, result });
   } catch (err) {
+    if (DEBUG) console.error("status error:", formatErr(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -154,6 +205,7 @@ app.get("/api/git/branches", async (req, res) => {
     const branches = await git.branchLocal();
     res.json({ ok: true, current: branches.current, all: branches.all });
   } catch (err) {
+    if (DEBUG) console.error("diff error:", formatErr(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -364,7 +416,7 @@ Now return a unified diff that applies cleanly. If no changes are needed, return
 
     res.json({ ok: true, patch: rawPatch });
   } catch (err) {
-    console.error("ai/patch error:", err.message);
+    console.error("ai/patch error:", formatErr(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -388,6 +440,7 @@ app.post("/api/git/apply-commit-push", async (req, res) => {
     await git.push(url);
     res.json({ ok: true, commit });
   } catch (err) {
+    if (DEBUG) console.error("apply-commit-push error:", formatErr(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -414,6 +467,7 @@ app.get("/api/git/log", async (req, res) => {
     const items = log.all.map(c => ({ hash: c.hash, message: c.message, date: c.date, author_name: c.author_name, web_url: webBase ? webBase + c.hash : "" }));
     res.json({ ok: true, commits: items });
   } catch (err) {
+    if (DEBUG) console.error("log error:", formatErr(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -453,7 +507,7 @@ wss.on("connection", (ws, req) => {
     p.onExit(() => { try { ws.close(); } catch {} });
     ws.on("message", msg => { try { p.write(msg.toString()); } catch {} });
     ws.on("close", () => { try { p.kill(); } catch {} });
-  } catch (e) { try { ws.close(); } catch {} }
+  } catch (e) { try { if (DEBUG) console.error("ws/terminal error:", e?.message || e); ws.close(); } catch {} }
 });
 
 server.listen(PORT, () => {
