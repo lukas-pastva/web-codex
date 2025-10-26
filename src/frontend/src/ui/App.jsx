@@ -57,12 +57,11 @@ function RepoList({ repos, onSelect, favs, toggleFav, query, setQuery }) {
   )
 }
 
-function RepoActions({ repo, meta, setMeta, openaiEnabled, cliPatchEnabled, onToggleHelp }) {
+function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
   const toast = useToast();
   const [branches, setBranches] = useState([]);
   const [current, setCurrent] = useState("");
   const [log, setLog] = useState([]);
-  const [instruction, setInstruction] = useState("");
   const [patch, setPatch] = useState("");
   const [message, setMessage] = useState("codex-" + new Date().toISOString());
   const [showPretty, setShowPretty] = useState(false);
@@ -133,25 +132,6 @@ function RepoActions({ repo, meta, setMeta, openaiEnabled, cliPatchEnabled, onTo
     return () => clearInterval(id);
   }, [autoRefresh, refreshSeconds, meta.repoPath]);
 
-  const doAI = async () => {
-    setPatch("");
-    try {
-      if (cliPatchEnabled) {
-        const r = await axios.post("/api/cli/patch", { repoPath: meta.repoPath, instruction });
-        setPatch(r.data.patch || "");
-        return;
-      }
-    } catch (e) {
-      console.warn("CLI patch failed, falling back to API if enabled", e?.response?.data || e.message);
-    }
-    if (openaiEnabled) {
-      const r = await axios.post("/api/ai/patch", { repoPath: meta.repoPath, instruction });
-      setPatch(r.data.patch);
-    } else {
-      alert("No patch method available. Configure CODEX_PATCH_CMD or OPENAI_API_KEY.");
-    }
-  };
-
   const doApplyCommitPush = async () => {
     if (!patch) return;
     await axios.post("/api/git/apply-commit-push", { repoPath: meta.repoPath, patch, message });
@@ -163,23 +143,14 @@ function RepoActions({ repo, meta, setMeta, openaiEnabled, cliPatchEnabled, onTo
     <div className="row">
       <div className="col">
         <div className="pane">
-          <div className="actions" style={{marginBottom:8}}>
+          <div className="actions" style={{marginBottom:8, display:'flex', flexWrap:'wrap', gap:8, alignItems:'center'}}>
             <button className="secondary" onClick={doPull}>git pull</button>
             <select id="branch-select" value={current} onChange={e => doCheckout(e.target.value)}>
               {branches.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
-          </div>
-
-          <div style={{marginTop:8}}>
-            <div className="muted">AI instruction</div>
-            <textarea placeholder="Describe the change you want (e.g., 'convert fetch to axios in src/api.js and add retry')"
-                      value={instruction} onChange={e=>setInstruction(e.target.value)} />
-            <div className="actions" style={{marginTop:8}}>
-              <button className="secondary" onClick={() => setShowTerm(true)}>🖥️ Codex CLI</button>
-              {cliPatchEnabled ? <button onClick={doAI}>💡 Patch (CLI)</button> : (openaiEnabled ? <button onClick={doAI}>💡 Patch (API)</button> : null)}
-              <input placeholder="commit message" value={message} onChange={e=>setMessage(e.target.value)}/>
-              <button onClick={doApplyCommitPush}>Apply & Push</button>
-            </div>
+            <button className="secondary" onClick={() => setShowTerm(true)}>🖥️ Codex CLI</button>
+            <input placeholder="commit message" value={message} onChange={e=>setMessage(e.target.value)} style={{minWidth:220}}/>
+            <button onClick={doApplyCommitPush}>Apply & Push</button>
           </div>
         </div>
 
@@ -464,8 +435,6 @@ export default function App() {
                   repo={currentRepo}
                   meta={meta}
                   setMeta={setMeta}
-                  openaiEnabled={openaiEnabled}
-                  cliPatchEnabled={cliPatchEnabled}
                   onToggleHelp={() => setShowHelp(h => !h)}
                 />
               </>
