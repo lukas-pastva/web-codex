@@ -7,9 +7,23 @@ export default function CodexTerminal({ repoPath, onClose }) {
   const ref = useRef(null);
   const termRef = useRef(null);
   const wsRef = useRef(null);
-  const [wrapCR, setWrapCR] = useState(() => (typeof localStorage !== 'undefined' ? localStorage.getItem('termWrapCR') !== '0' : true));
+  // Default OFF (raw PTY behavior). User can enable if they prefer line-per-update.
+  const [wrapCR, setWrapCR] = useState(() => {
+    if (typeof localStorage === 'undefined') return false;
+    const v = localStorage.getItem('termWrapCR');
+    return v === '1' ? true : false;
+  });
   const wrapRef = useRef(wrapCR);
   useEffect(() => { wrapRef.current = wrapCR; try { localStorage.setItem('termWrapCR', wrapCR ? '1' : '0'); } catch {} }, [wrapCR]);
+
+  const resetTerminalSettings = () => {
+    try { localStorage.removeItem('termWrapCR'); } catch {}
+    setWrapCR(false);
+    const t = termRef.current;
+    if (t && t.options) {
+      t.options.fontSize = 14;
+    }
+  };
 
   useEffect(() => {
     const term = new Terminal({ convertEol: true, cursorBlink: true, fontSize: 14 });
@@ -19,16 +33,10 @@ export default function CodexTerminal({ repoPath, onClose }) {
     const proto = (location.protocol === 'https:') ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws/terminal?repoPath=${encodeURIComponent(repoPath||'')}`);
     wsRef.current = ws;
-    // Normalize progress lines conditionally to avoid overwriting
+    // Minimal normalization only when enabled: CR (without LF) -> CRLF
     const normalize = (s) => {
-      if (!wrapRef.current) return s;
-      // 1) collapse CRLF to LF; 2) turn any remaining CR into LF; 3) strip erase-line; 4) turn cursor reposition to newline
-      return s
-        .replace(/\r\n/g, '\n')
-        .replace(/\r/g, '\n')
-        .replace(/\x1b\[[0-9;]*K/g, '')
-        .replace(/\x1b\[[0-9;]*[GHF]/g, '\n')
-        .replace(/\x1b\[[0-9;]*[ABCD]/g, '\n');
+      if (!wrapRef.current) return s; // raw PTY stream
+      return s.replace(/\r(?!\n)/g, '\r\n');
     };
     ws.onmessage = (ev) => {
       let s = typeof ev.data === 'string' ? ev.data : String(ev.data);
@@ -71,6 +79,12 @@ export default function CodexTerminal({ repoPath, onClose }) {
               title={`Wrap progress lines (CR→LF): ${wrapCR ? 'on' : 'off'}`}
               aria-pressed={wrapCR}
             >⤶</button>
+            <button
+              className="secondary icon"
+              style={{ marginLeft: 6 }}
+              onClick={resetTerminalSettings}
+              title="Reset terminal settings (font size, wrap)"
+            >♻️</button>
           </span>
         </div>
         <button className="secondary" onClick={onClose}>Close</button>
