@@ -3,7 +3,7 @@ import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 
-export default function CodexTerminal({ repoPath, isFull = false, onToggleFull }) {
+export default function CodexTerminal({ repoPath }) {
   const ref = useRef(null);
   const termRef = useRef(null);
   const wsRef = useRef(null);
@@ -92,13 +92,9 @@ export default function CodexTerminal({ repoPath, isFull = false, onToggleFull }
             >📋</button>
           </span>
         </div>
-        <div>
-          <button className="secondary" onClick={onToggleFull} title={isFull ? 'Restore terminal' : 'Maximize terminal'}>
-            {isFull ? '🗗' : '⛶'}
-          </button>
-        </div>
+        <div></div>
       </div>
-      <div ref={ref} className="term" style={isFull ? { height: 'calc(100vh - 140px)' } : {}} />
+      <div ref={ref} className="term" />
     </div>
   );
 }

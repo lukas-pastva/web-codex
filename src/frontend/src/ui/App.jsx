@@ -66,7 +66,6 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshSeconds, setRefreshSeconds] = useState(5);
   const [pullInfo, setPullInfo] = useState({ at: null, upToDate: null, behind: 0 });
-  const [termFull, setTermFull] = useState(false);
   const [showCommitCount, setShowCommitCount] = useState(1);
 
   const loadBranches = async () => {
@@ -214,7 +213,7 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
       </div>
 
       <div className="col">
-        {!termFull && <CodexTerminal repoPath={meta.repoPath} onToggleFull={() => setTermFull(true)} />}
+        <CodexTerminal repoPath={meta.repoPath} />
         <div className="pane">
           <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span>Patch preview</span>
@@ -417,19 +416,7 @@ export default function App() {
 
   return (
     <div>
-      {termFull && (
-        <div style={{position:'fixed', inset:0, background:'var(--bg)', zIndex: 9999, padding:12, display:'grid', gridTemplateRows:'auto 1fr'}}>
-          <div className="pane" style={{marginBottom:12}}>
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-              <strong>Terminal (fullscreen)</strong>
-              <button className="secondary" onClick={() => setTermFull(false)} title="Restore">🗗</button>
-            </div>
-          </div>
-          <div className="pane" style={{padding:0}}>
-            <CodexTerminal repoPath={meta.repoPath} isFull onToggleFull={() => setTermFull(false)} />
-          </div>
-        </div>
-      )}
+      
       <header>
         <div style={{cursor:'pointer'}} onClick={handleGoHome} title="Home (repos)"><strong>web-codex</strong></div>
         
