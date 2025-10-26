@@ -272,7 +272,14 @@ app.get("/api/git/diff", async (req, res) => {
     const repoPath = req.query.repoPath;
     if (!repoPath) return res.status(400).json({ error: "repoPath is required" });
     const git = simpleGit(repoPath);
-    const diff = await git.raw(["diff"]);
+    // Fast path: if working tree is clean, avoid running a full diff
+    const st = await git.status();
+    if (st.isClean()) {
+      res.set("Cache-Control", "no-store");
+      return res.json({ ok: true, diff: "" });
+    }
+    const diff = await git.raw(["diff", "--no-ext-diff"]);
+    res.set("Cache-Control", "no-store");
     res.json({ ok: true, diff });
   } catch (err) {
     res.status(500).json({ error: err.message });
