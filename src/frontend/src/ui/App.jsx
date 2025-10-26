@@ -186,15 +186,17 @@ function RepoActions({ repo, meta, setMeta, openaiEnabled, cliPatchEnabled, onTo
         <FileTree repoPath={meta.repoPath} onOpen={async (p)=>{ const r=await axios.get("/api/git/file",{params:{repoPath:meta.repoPath,path:p}}); setOpenFile(p); setOpenFileContent(r.data.text||""); }} />
         <div className="pane" style={{marginTop:16}}>
           <div className="muted">Last 30 commits</div>
-          {log.map(c => (
-            <div key={c.hash} className="repo">
-              <div>
-                <div><strong>{c.message}</strong></div>
-                <div className="muted">{c.hash.slice(0,8)} · {new Date(c.date).toLocaleString()}</div>
+          <div className="commit-list">
+            {log.map(c => (
+              <div key={c.hash} className="repo">
+                <div>
+                  <div><strong>{c.message}</strong></div>
+                  <div className="muted">{c.hash.slice(0,8)} · {new Date(c.date).toLocaleString()}</div>
+                </div>
+                <div>{c.web_url ? <a href={c.web_url} target="_blank">open</a> : <span className="tag">no link</span>}</div>
               </div>
-              <div>{c.web_url ? <a href={c.web_url} target="_blank">open</a> : <span className="tag">no link</span>}</div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
 

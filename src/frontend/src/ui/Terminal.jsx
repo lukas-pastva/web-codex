@@ -16,7 +16,13 @@ export default function CodexTerminal({ repoPath, onClose }) {
     const proto = (location.protocol === 'https:') ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws/terminal?repoPath=${encodeURIComponent(repoPath||'')}`);
     wsRef.current = ws;
-    ws.onmessage = (ev) => term.write(ev.data);
+    // Normalize CR-only updates to newlines for better readability in browsers
+    const normalizeCr = true;
+    ws.onmessage = (ev) => {
+      let s = typeof ev.data === 'string' ? ev.data : String(ev.data);
+      if (normalizeCr) s = s.replace(/\r(?!\n)/g, '\r\n');
+      term.write(s);
+    };
     ws.onclose = () => term.writeln('\r\n[session closed]\r\n');
     term.onData(data => ws.readyState === 1 && ws.send(data));
     return () => { try { ws.close(); } catch {}; term.dispose(); };
