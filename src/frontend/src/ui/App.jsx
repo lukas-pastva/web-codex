@@ -236,6 +236,20 @@ export default function App() {
   const routeRef = useRef({});
   const [pendingRepoId, setPendingRepoId] = useState("");
 
+  const handleBackToGroup = () => {
+    setCurrentRepo(null);
+    setMeta({ repoPath: "" });
+    // ensure URL drops the repo param immediately
+    updateHashFromState('repos', current, null);
+  };
+
+  const handleGoHome = () => {
+    setPhase('repos');
+    setCurrentRepo(null);
+    setMeta({ repoPath: "" });
+    updateHashFromState('repos', current, null);
+  };
+
   // --- Simple hash router ---
   function parseHash() {
     const h = (location.hash || '').replace(/^#/, '');
@@ -360,6 +374,15 @@ export default function App() {
   }, [openaiEnabled, phase]);
   useEffect(() => { if (phase === "repos") load(); }, [phase]);
 
+  // If user switches group tabs while a repo is open, go back to the group list
+  useEffect(() => {
+    if (currentRepo) {
+      setCurrentRepo(null);
+      setMeta({ repoPath: '' });
+      updateHashFromState('repos', current, null);
+    }
+  }, [current]);
+
   const reposForCurrent = useMemo(() => {
     if (!current) return [];
     const [provider, key] = current.split(":");
@@ -388,10 +411,11 @@ export default function App() {
   return (
     <div>
       <header>
-        <div><strong>web-codex</strong></div>
+        <div style={{cursor:'pointer'}} onClick={handleGoHome} title="Home (repos)"><strong>web-codex</strong></div>
         <div className="tag">all-in-one</div>
         <div className="tag">OpenAI-powered</div>
         <div style={{marginLeft:'auto', display:'flex', gap:8, alignItems:'center'}}>
+          <button className="secondary icon" onClick={handleGoHome} title="Home">🏠</button>
           <button
             className="secondary icon"
             onClick={() => setShowHelp(true)}
@@ -426,14 +450,25 @@ export default function App() {
                 setQuery={setQuery}
               />
             ) : (
-              <RepoActions
-                repo={currentRepo}
-                meta={meta}
-                setMeta={setMeta}
-                openaiEnabled={openaiEnabled}
-                cliPatchEnabled={cliPatchEnabled}
-                onToggleHelp={() => setShowHelp(h => !h)}
-              />
+              <>
+                <div className="pane" style={{marginBottom:12}}>
+                  <div className="actions" style={{display:'flex',alignItems:'center',gap:8}}>
+                    <button className="secondary" onClick={handleBackToGroup}>← Back to group</button>
+                    <div className="muted">
+                      {(() => { const [prov, key] = (current||'').split(':'); return `${prov||''}${key? ' / ' + key : ''}`; })()}
+                      {currentRepo ? ` / ${currentRepo.name}` : ''}
+                    </div>
+                  </div>
+                </div>
+                <RepoActions
+                  repo={currentRepo}
+                  meta={meta}
+                  setMeta={setMeta}
+                  openaiEnabled={openaiEnabled}
+                  cliPatchEnabled={cliPatchEnabled}
+                  onToggleHelp={() => setShowHelp(h => !h)}
+                />
+              </>
             )}
           </>
         )}
