@@ -1,13 +1,13 @@
 # web-codex
 
-All‑in‑one UI to browse your GitHub/GitLab repos, pull/branch/commit/push, and ask AI to generate a **unified diff patch** for your changes, preview it, then apply & push.
+All‑in‑one web UI to browse your GitHub/GitLab repos, pull/branch/commit/push, and work via the Codex CLI in the container. No web login or AI instruction area — CLI‑only.
 
 ## Features
 
 - Tabs grouped by **GitHub user/orgs** and **GitLab groups**.
 - One‑click `git pull`, **branch** dropdown + checkout.
-- **AI Patch ("Codex")**: describe the change; backend asks OpenAI to produce a **diff**. Preview, then **Apply & Push**.
-- **Commit history** (last 30), with links to remote commits so your CI/CD can pick them up.
+- Built‑in terminal running your configured `CODEX_CMD` (auto‑opens when a repo is opened).
+- **Commit history** (last 10) with a “copy hash” action.
 
 ## Quick Start (Docker)
 
@@ -15,11 +15,11 @@ All‑in‑one UI to browse your GitHub/GitLab repos, pull/branch/commit/push, a
 # Build (use the Dockerfile in src/ with src/ as context)
 docker build -f src/Dockerfile -t web-codex:0.1.0 src
 
-# Run (map port and data volume)
+# Run (map port and data volume). Provide tokens via env or secrets.
 docker run --rm -p 8080:8080 \
-  -e OPENAI_API_KEY=sk-... \
   -e GH_TOKEN=ghp_... -e GH_USER=your-username -e GH_ORGS=org1,org2 \
   -e GL_TOKEN=glpat-... -e GL_BASE_URL=https://gitlab.com -e GL_GROUPS=groupA,groupB \
+  -e CODEX_CMD=codex -e HOME=/home/app \
   -v $(pwd)/data:/data \
   web-codex:0.1.0
 ```

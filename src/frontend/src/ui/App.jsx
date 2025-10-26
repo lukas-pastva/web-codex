@@ -214,9 +214,7 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
 }
 
 export default function App() {
-  const [phase, setPhase] = useState("intro"); // intro | repos
-  const [openaiEnabled, setOpenaiEnabled] = useState(false);
-  const [cliPatchEnabled, setCliPatchEnabled] = useState(false);
+  const [phase, setPhase] = useState("repos"); // repos only
   const [providers, setProviders] = useState({ github: {}, gitlab: {} });
   const [favs, setFavs] = useState(() => JSON.parse(localStorage.getItem("favs")||"[]"));
   const [showHelp, setShowHelp] = useState(false);
@@ -246,7 +244,7 @@ export default function App() {
   // --- Simple hash router ---
   function parseHash() {
     const h = (location.hash || '').replace(/^#/, '');
-    if (!h) return { page: 'intro' };
+    if (!h) return { page: 'repos' };
     const [page, qs] = h.split('?');
     const params = {};
     if (qs) {
@@ -255,10 +253,10 @@ export default function App() {
         params[decodeURIComponent(k)] = decodeURIComponent(v);
       }
     }
-    return { page: page || 'intro', params };
+    return { page: page || 'repos', params };
   }
   function buildHash(next) {
-    const { page = 'intro', params = {} } = next || {};
+    const { page = 'repos', params = {} } = next || {};
     const qs = Object.entries(params)
       .filter(([,v]) => v !== undefined && v !== '' && v !== null)
       .map(([k,v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
@@ -282,7 +280,7 @@ export default function App() {
   function applyRoute(route) {
     routeRef.current = route;
     const { page, params } = route;
-    setPhase(page === 'repos' ? 'repos' : 'intro');
+    setPhase('repos');
     if (page === 'repos') {
       const prov = params?.provider;
       const key = params?.key;
@@ -311,9 +309,7 @@ export default function App() {
   const cycleTheme = () => setThemeMode(m => m === 'auto' ? 'dark' : (m === 'dark' ? 'light' : 'auto'));
   const themeIcon = themeMode === 'auto' ? '🖥️' : (themeMode === 'dark' ? '🌙' : '☀️');
 
-  const fetchConfig = async () => {
-    try { const r = await axios.get("/api/config"); setOpenaiEnabled(Boolean(r.data.openai)); setCliPatchEnabled(Boolean(r.data.cliPatch)); } catch {}
-  };
+  // CLI-only mode: no config fetch needed
 
   const load = async () => {
     setLoadingRepos(true);
@@ -363,13 +359,6 @@ export default function App() {
       openRepo(match, prov, key).then(()=> setPendingRepoId('')).catch(()=>{});
     }
   }, [providers, current, phase, pendingRepoId]);
-  useEffect(() => { fetchConfig(); }, []);
-  // If API key is present, skip intro and go straight to repos
-  useEffect(() => {
-    if (openaiEnabled && phase === 'intro') {
-      setPhase('repos');
-    }
-  }, [openaiEnabled, phase]);
   useEffect(() => { if (phase === "repos") load(); }, [phase]);
 
   // If user switches group tabs while a repo is open, go back to the group list
@@ -411,7 +400,7 @@ export default function App() {
       <header>
         <div style={{cursor:'pointer'}} onClick={handleGoHome} title="Home (repos)"><strong>web-codex</strong></div>
         <div className="tag">all-in-one</div>
-        <div className="tag">OpenAI-powered</div>
+        
         <div style={{marginLeft:'auto', display:'flex', gap:8, alignItems:'center'}}>
           <button className="secondary icon" onClick={handleGoHome} title="Home">🏠</button>
           <button
@@ -423,51 +412,35 @@ export default function App() {
         </div>
       </header>
       <div className="container">
-        {phase === "intro" ? (
-          <div>
-            <div className="pane" style={{marginBottom:12}}>
-              <div className="muted">First run</div>
-              <p>Use the terminal below to run <code>codex</code> and sign in manually. When you're done, continue to repos.</p>
-              <p className="muted">No OPENAI token is required here; this is a native CLI session.</p>
-            </div>
-            <CodexTerminal repoPath={""} onClose={() => {}} />
-            <div style={{marginTop:12}}>
-              <button onClick={() => setPhase("repos")}>Continue to Repos</button>
-            </div>
-          </div>
+        <GroupTabs providers={providers} current={current} setCurrent={setCurrent} />
+        {!currentRepo ? (
+          loadingRepos ? (
+            <div className="pane"><div className="muted">Loading repos…</div></div>
+          ) : (
+            <RepoList
+              repos={reposForCurrent}
+              onSelect={openRepo}
+              favs={favs}
+              toggleFav={(full)=>{const next=favs.includes(full)?favs.filter(f=>f!==full):[...favs,full]; setFavs(next); localStorage.setItem('favs', JSON.stringify(next));}}
+            />
+          )
         ) : (
           <>
-            <GroupTabs providers={providers} current={current} setCurrent={setCurrent} />
-            {!currentRepo ? (
-              loadingRepos ? (
-                <div className="pane"><div className="muted">Loading repos…</div></div>
-              ) : (
-                <RepoList
-                  repos={reposForCurrent}
-                  onSelect={openRepo}
-                  favs={favs}
-                  toggleFav={(full)=>{const next=favs.includes(full)?favs.filter(f=>f!==full):[...favs,full]; setFavs(next); localStorage.setItem('favs', JSON.stringify(next));}}
-                />
-              )
-            ) : (
-              <>
-                <div className="pane" style={{marginBottom:12}}>
-                  <div className="actions" style={{display:'flex',alignItems:'center',gap:8}}>
-                    <button className="secondary" onClick={handleBackToGroup}>← Back to group</button>
-                    <div className="muted">
-                      {(() => { const [prov, key] = (current||'').split(':'); return `${prov||''}${key? ' / ' + key : ''}`; })()}
-                      {currentRepo ? ` / ${currentRepo.name}` : ''}
-                    </div>
-                  </div>
+            <div className="pane" style={{marginBottom:12}}>
+              <div className="actions" style={{display:'flex',alignItems:'center',gap:8}}>
+                <button className="secondary" onClick={handleBackToGroup}>← Back to group</button>
+                <div className="muted">
+                  {(() => { const [prov, key] = (current||'').split(':'); return `${prov||''}${key? ' / ' + key : ''}`; })()}
+                  {currentRepo ? ` / ${currentRepo.name}` : ''}
                 </div>
-                <RepoActions
-                  repo={currentRepo}
-                  meta={meta}
-                  setMeta={setMeta}
-                  onToggleHelp={() => setShowHelp(h => !h)}
-                />
-              </>
-            )}
+              </div>
+            </div>
+            <RepoActions
+              repo={currentRepo}
+              meta={meta}
+              setMeta={setMeta}
+              onToggleHelp={() => setShowHelp(h => !h)}
+            />
           </>
         )}
       </div>
