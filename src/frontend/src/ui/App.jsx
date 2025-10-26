@@ -274,14 +274,23 @@ export default function App() {
             </div>
           </div>
         ) : (
-        <GroupTabs providers={providers} current={current} setCurrent={setCurrent} />
-        {!currentRepo ? (
-          <RepoList repos={reposForCurrent} onSelect={openRepo} favs={favs} toggleFav={(full)=>{const next=favs.includes(full)?favs.filter(f=>f!==full):[...favs,full]; setFavs(next); localStorage.setItem('favs', JSON.stringify(next));}} query={query} setQuery={setQuery} />
-        ) : (
-          <RepoActions repo={currentRepo} meta={meta} setMeta={setMeta} />
+          <>
+            <GroupTabs providers={providers} current={current} setCurrent={setCurrent} />
+            {!currentRepo ? (
+              <RepoList
+                repos={reposForCurrent}
+                onSelect={openRepo}
+                favs={favs}
+                toggleFav={(full)=>{const next=favs.includes(full)?favs.filter(f=>f!==full):[...favs,full]; setFavs(next); localStorage.setItem('favs', JSON.stringify(next));}}
+                query={query}
+                setQuery={setQuery}
+              />
+            ) : (
+              <RepoActions repo={currentRepo} meta={meta} setMeta={setMeta} />
+            )}
+          </>
         )}
       </div>
-        )}
     </div>
   );
 }
