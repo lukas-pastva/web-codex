@@ -12,26 +12,34 @@ All‑in‑one UI to browse your GitHub/GitLab repos, pull/branch/commit/push, a
 ## Quick Start (Docker)
 
 ```bash
-docker build -t web-codex:0.1.0 .
-docker run --rm -p 8080:8080   -e OPENAI_API_KEY=sk-...   -e GH_TOKEN=ghp_... -e GH_USER=your-username -e GH_ORGS=org1,org2   -e GL_TOKEN=glpat-... -e GL_BASE_URL=https://gitlab.com -e GL_GROUPS=12345   -v $(pwd)/data:/data web-codex:0.1.0
+# Build (use the Dockerfile in src/ with src/ as context)
+docker build -f src/Dockerfile -t web-codex:0.1.0 src
+
+# Run (map port and data volume)
+docker run --rm -p 8080:8080 \
+  -e OPENAI_API_KEY=sk-... \
+  -e GH_TOKEN=ghp_... -e GH_USER=your-username -e GH_ORGS=org1,org2 \
+  -e GL_TOKEN=glpat-... -e GL_BASE_URL=https://gitlab.com -e GL_GROUPS=groupA,groupB \
+  -v $(pwd)/data:/data \
+  web-codex:0.1.0
 ```
 
 Open http://localhost:8080
 
-## Kubernetes (manifests in `k8s/`)
+## Kubernetes (manifests in `src/k8s/`)
 
 ```bash
-kubectl apply -f k8s/pvc.yaml
-kubectl apply -f k8s/secret.example.yaml   # edit values first
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/ingress.yaml
+kubectl apply -f src/k8s/pvc.yaml
+kubectl apply -f src/k8s/secret.example.yaml   # edit values first
+kubectl apply -f src/k8s/deployment.yaml
+kubectl apply -f src/k8s/ingress.yaml
 ```
 
 > **Security note**: For HTTPS Git pushes, tokens are injected into the remote URL in‑memory for that push (`oauth2:<token>@…`). Avoid enabling verbose logs in production.
 
 ## OpenAI Codex note
 
-The **2021 Codex API models** (`code-*`) were deprecated in 2023, but **OpenAI Codex** (the agentic coding tool) is alive and well in 2025. This app defaults to **`gpt-5-codex`** via the **Responses API** (with a safe fallback to Chat Completions using `gpt-4o-mini`). You can override the model with `OPENAI_MODEL`.
+The **2021 Codex API models** (`code-*`) were deprecated in 2023, but **OpenAI Codex** (the agentic coding tool) is alive and well in 2025. This app defaults to **`gpt-5-codex`** and first uses the **Responses API**, then falls back to **Chat Completions** using the same model ID if needed. Override the model with `OPENAI_MODEL` if your account uses a different deployment.
 
 ## How AI Patch works
 
@@ -43,19 +51,54 @@ The **2021 Codex API models** (`code-*`) were deprecated in 2023, but **OpenAI C
 
 If the model emits an invalid patch, you can retry with a clearer instruction.
 
-## Environment
+## Environment Variables
 
-- `OPENAI_API_KEY` – OpenAI key.
-- **GitHub**: `GH_TOKEN`, `GH_USER`, optional `GH_ORGS` (comma‑separated).
-- **GitLab**: `GL_TOKEN`, `GL_BASE_URL` (default `https://gitlab.com`), `GL_GROUPS` (IDs or paths).
-- `DATA_DIR` – repo storage (default `/data/repos`).
+- `OPENAI_API_KEY` — OpenAI API key. Required to enable the AI Patch button. If unset, you can still use the CLI flows.
+- `OPENAI_MODEL` — Model ID used for AI Patch. Default: `gpt-5-codex`. Backend tries Responses first, then Chat Completions with the same model ID.
+- `PORT` — HTTP listen port. Default: `8080`.
+- `DATA_DIR` — Root for repository storage. Default: `/data/repos`. Mount `/data` to persist.
+
+- GitHub:
+  - `GH_TOKEN` — Personal access token. Required to list repos and push.
+  - `GH_USER` — GitHub username. Optional when `GH_TOKEN` is set; if omitted, auto‑detects.
+  - `GH_ORGS` — Comma‑separated orgs to show (e.g., `org1,org2`). Optional.
+
+- GitLab:
+  - `GL_TOKEN` — Personal access token. Required to list group projects and push.
+  - `GL_BASE_URL` — Base URL of your GitLab instance. Default: `https://gitlab.com`.
+  - `GL_GROUPS` — Comma‑separated group IDs or full paths (e.g., `12345`, `mygroup/subgroup`).
+
+- Codex CLI integration:
+  - `CODEX_CMD` — Command executed in the in‑browser terminal. Default: `codex`.
+  - `CODEX_PATCH_CMD` — Shell template to generate edits in a temporary worktree. Optional; when set, enables “Patch (CLI)”.
+    - Placeholders: `{{instruction_file}}` (path to a temp file with the user instruction), `{{repo_root}}` (path to the worktree).
+    - Example: `CODEX_PATCH_CMD='codex < {{instruction_file}}'`
 
 ## Dev
 
 ```bash
+cd src
 npm i
 npm run dev
 # FE: http://localhost:5173  | BE: http://localhost:8080
+```
+
+The backend dev server loads environment variables from `src/backend/.env` (via `node --env-file=.env`). Create that file to customize your local run, for example:
+
+```ini
+# src/backend/.env
+PORT=8080
+DATA_DIR=/data/repos
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-5-codex
+GH_TOKEN=ghp_...
+GH_USER=your-username
+GH_ORGS=org1,org2
+GL_TOKEN=glpat-...
+GL_BASE_URL=https://gitlab.com
+GL_GROUPS=mygroup
+# Optional for CLI patch
+# CODEX_PATCH_CMD=codex < {{instruction_file}}
 ```
 
 ## Caveats / Next steps
