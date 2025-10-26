@@ -130,9 +130,9 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
   }, [autoRefresh, refreshSeconds, meta.repoPath]);
 
   const doApplyCommitPush = async () => {
-    if (!patch) return;
-    await axios.post("/api/git/apply-commit-push", { repoPath: meta.repoPath, patch, message });
+    await axios.post("/api/git/commitPush", { repoPath: meta.repoPath, message });
     await refreshLog();
+    await refreshDiff();
     toast("Pushed ✅");
   };
 
