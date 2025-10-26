@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "node --env-file=.env --watch src/server.js",
-    "build": "mkdir -p dist && cp -r src dist && cp -r ../frontend/dist dist/frontend",
+    "build": "rm -rf dist && mkdir -p dist/frontend && cp src/server.js dist/server.js && cp -r ../frontend/dist/* dist/frontend/",
     "start": "node dist/server.js"
   },
   "dependencies": {
