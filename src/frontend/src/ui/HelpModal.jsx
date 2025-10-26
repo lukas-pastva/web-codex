@@ -12,7 +12,6 @@ export default function HelpModal({ open, onClose }) {
         <ul>
           <li><code>p</code> — git pull</li>
           <li><code>b</code> — focus branch dropdown</li>
-          <li><code>t</code> — toggle terminal</li>
           <li><code>d</code> — refresh diff</li>
           <li><code>c</code> — apply & push</li>
           <li><code>?</code> — toggle this help</li>

@@ -65,7 +65,7 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
   const [openFileContent, setOpenFileContent] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshSeconds, setRefreshSeconds] = useState(5);
-  const [showTerm, setShowTerm] = useState(true);
+  const [showCommitCount, setShowCommitCount] = useState(1);
 
   const loadBranches = async () => {
     const r = await axios.get("/api/git/branches", { params: { repoPath: meta.repoPath }});
@@ -85,7 +85,7 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
       if (typing) return; // ignore shortcuts while typing / interacting with controls
       if (e.key === 'p') { e.preventDefault(); doPull(); }
       if (e.key === 'b') { e.preventDefault(); const el = document.getElementById('branch-select'); el && el.focus(); }
-      if (e.key === 't') { e.preventDefault(); setShowTerm(s => !s); }
+      // terminal is always visible; no 't' toggle
       if (e.key === 'd') { e.preventDefault(); refreshDiff(); }
       if (e.key === '?') { e.preventDefault(); onToggleHelp && onToggleHelp(); }
       if (e.key === 'c') { e.preventDefault(); doApplyCommitPush(); }
@@ -101,10 +101,7 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
     }
   }, [meta.repoPath]);
 
-  // Ensure terminal opens automatically when a repo is opened or switched
-  useEffect(() => {
-    if (meta.repoPath) setShowTerm(true);
-  }, [meta.repoPath]);
+  // Terminal is always visible
 
   const doPull = async () => {
     await axios.post("/api/git/pull", { repoPath: meta.repoPath });
@@ -176,9 +173,16 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
 
         <FileTree repoPath={meta.repoPath} onOpen={async (p)=>{ const r=await axios.get("/api/git/file",{params:{repoPath:meta.repoPath,path:p}}); setOpenFile(p); setOpenFileContent(r.data.text||""); }} />
         <div className="pane" style={{marginTop:16}}>
-          <div className="muted">Last 10 commits</div>
+          <div className="muted" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span>{showCommitCount === 1 ? 'Last commit' : `Last ${showCommitCount} commits`}</span>
+            <span>
+              {log.length > showCommitCount && (
+                <button className="secondary icon" onClick={() => setShowCommitCount(c => Math.min(log.length, c + 10))} title="Show more commits">+</button>
+              )}
+            </span>
+          </div>
           <div className="commit-list">
-            {log.slice(0,10).map(c => (
+            {log.slice(0, showCommitCount).map(c => (
               <div key={c.hash} className="repo">
                 <div>
                   <div><strong>{c.message}</strong></div>
@@ -194,7 +198,7 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
       </div>
 
       <div className="col">
-        {showTerm && <CodexTerminal repoPath={meta.repoPath} onClose={() => setShowTerm(false)} />}
+        <CodexTerminal repoPath={meta.repoPath} />
         <div className="pane">
           <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span>Patch preview</span>
@@ -399,14 +403,12 @@ export default function App() {
     <div>
       <header>
         <div style={{cursor:'pointer'}} onClick={handleGoHome} title="Home (repos)"><strong>web-codex</strong></div>
-        <div className="tag">all-in-one</div>
         
         <div style={{marginLeft:'auto', display:'flex', gap:8, alignItems:'center'}}>
-          <button className="secondary icon" onClick={handleGoHome} title="Home">🏠</button>
           <button
             className="secondary icon"
             onClick={() => setShowHelp(true)}
-            title={"Shortcuts: p pull, b branch, t terminal, d diff, c commit. Disabled while typing. Press ? for full help."}
+            title={"Shortcuts: p pull, b branch, d diff, c commit. Disabled while typing. Press ? for full help."}
           >⌨️</button>
           <button className="secondary icon" onClick={cycleTheme} title={`Theme: ${themeMode}`}>{themeIcon}</button>
         </div>

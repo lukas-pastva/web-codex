@@ -3,7 +3,7 @@ import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 
-export default function CodexTerminal({ repoPath, onClose }) {
+export default function CodexTerminal({ repoPath }) {
   const ref = useRef(null);
   const termRef = useRef(null);
   const wsRef = useRef(null);
@@ -128,7 +128,6 @@ export default function CodexTerminal({ repoPath, onClose }) {
             >♻️</button>
           </span>
         </div>
-        <button className="secondary" onClick={onClose}>Close</button>
       </div>
       <div ref={ref} className="term" />
     </div>

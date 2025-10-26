@@ -26,35 +26,127 @@ docker run --rm -p 8080:8080 \
 
 Open http://localhost:8080
 
-## Kubernetes (manifests in `src/k8s/`)
+## Kubernetes (CLI‑only, secrets‑backed)
 
-```bash
-kubectl apply -f src/k8s/pvc.yaml
-kubectl apply -f src/k8s/secret.example.yaml   # edit values first
-kubectl apply -f src/k8s/deployment.yaml
-kubectl apply -f src/k8s/ingress.yaml
+Example Deployment (uses a Secret for tokens and Codex config):
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: web-codex
+  name: web-codex
+  namespace: web-codex
+spec:
+  replicas: 1
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web-codex
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web-codex
+    spec:
+      containers:
+        - env:
+            - name: GH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: GH_TOKEN
+                  name: web-codex
+            - name: GH_USER
+              value: your-github-user
+            - name: GL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: GL_TOKEN
+                  name: web-codex
+            - name: GL_GROUPS
+              value: '12345'
+            - name: DEBUG
+              value: '1'
+            - name: CODEX_CMD
+              value: codex
+            - name: HOME
+              value: /home/app
+          image: yourregistry/web-codex:tag
+          imagePullPolicy: Always
+          name: web-codex
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          resources:
+            limits:
+              memory: 500Mi
+            requests:
+              cpu: 250m
+              memory: 250Mi
+          securityContext:
+            fsGroup: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+          volumeMounts:
+            - mountPath: /home/app/.codex
+              name: codex-writable
+              subPath: .codex
+            - mountPath: /data
+              name: data
+      initContainers:
+        - command:
+            - /bin/sh
+            - '-c'
+            - |
+              set -euo pipefail
+              mkdir -p /work/.codex
+              cp /bootstrap/auth.json /work/.codex/auth.json
+              cp /bootstrap/config.toml /work/.codex/config.toml
+              chown -R 1000:1000 /work/.codex
+              chmod 700 /work/.codex
+              chmod 600 /work/.codex/auth.json /work/.codex/config.toml
+              mkdir -p /data/repos/_tmp
+              chown -R 1000:1000 /data
+          image: alpine:3.20
+          name: setup-codex-config
+          volumeMounts:
+            - mountPath: /bootstrap
+              name: secret-bootstrap
+              readOnly: true
+            - mountPath: /work
+              name: codex-writable
+            - mountPath: /data
+              name: data
+      serviceAccountName: web-codex
+      volumes:
+        - name: secret-bootstrap
+          secret:
+            items:
+              - key: auth.json
+                path: auth.json
+              - key: config.toml
+                path: config.toml
+            secretName: web-codex
+        - emptyDir: {}
+          name: codex-writable
+        - emptyDir: {}
+          name: data
 ```
 
-> **Security note**: For HTTPS Git pushes, tokens are injected into the remote URL in‑memory for that push (`oauth2:<token>@…`). Avoid enabling verbose logs in production.
+Security note: provide Git tokens via Secret/env and avoid verbose logs in production.
 
-## OpenAI Codex note
+## Workflow
 
-The **2021 Codex API models** (`code-*`) were deprecated in 2023, but **OpenAI Codex** (the agentic coding tool) is alive and well in 2025. This app defaults to **`gpt-5-codex`** and first uses the **Responses API**, then falls back to **Chat Completions** using the same model ID if needed. Override the model with `OPENAI_MODEL` if your account uses a different deployment.
-
-## How AI Patch works
-
-1. Backend builds a short context (repo tree + optional small files you can hint later).
-2. Sends your instruction to OpenAI with a strict system prompt to **return only a unified diff** in a fenced `diff` block.
-3. Validates patch with `git apply --check`.
-4. You review the patch in the UI.
-5. Apply -> commit -> push.
-
-If the model emits an invalid patch, you can retry with a clearer instruction.
+1. Open the app and choose a provider tab (GitHub user/org or GitLab group).
+2. Click a repo row to clone/open it.
+3. The terminal auto‑opens for CLI usage (`CODEX_CMD`).
+4. Use the actions row to pull/checkout/commit/push.
+5. Diff preview auto‑refreshes by default; adjust interval as needed.
 
 ## Environment Variables
 
-- `OPENAI_API_KEY` — OpenAI API key. Required to enable the AI Patch button. If unset, you can still use the CLI flows.
-- `OPENAI_MODEL` — Model ID used for AI Patch. Default: `gpt-5-codex`. Backend tries Responses first, then Chat Completions with the same model ID.
 - `PORT` — HTTP listen port. Default: `8080`.
 - `DATA_DIR` — Root for repository storage. Default: `/data/repos`. Mount `/data` to persist.
 
@@ -73,11 +165,8 @@ If the model emits an invalid patch, you can retry with a clearer instruction.
   - `GL_BASE_URL` — Base URL of your GitLab instance. Default: `https://gitlab.com`.
   - `GL_GROUPS` — Comma‑separated group IDs or full paths (e.g., `12345`, `mygroup/subgroup`).
 
-- Codex CLI integration:
+- Codex CLI:
   - `CODEX_CMD` — Command executed in the in‑browser terminal. Default: `codex`.
-  - `CODEX_PATCH_CMD` — Shell template to generate edits in a temporary worktree. Optional; when set, enables “Patch (CLI)”.
-    - Placeholders: `{{instruction_file}}` (path to a temp file with the user instruction), `{{repo_root}}` (path to the worktree).
-    - Example: `CODEX_PATCH_CMD='codex < {{instruction_file}}'`
 
 ## Dev
 
@@ -94,16 +183,12 @@ The backend dev server loads environment variables from `src/backend/.env` (via 
 # src/backend/.env
 PORT=8080
 DATA_DIR=/data/repos
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-5-codex
 GH_TOKEN=ghp_...
 GH_USER=your-username
 GH_ORGS=org1,org2
 GL_TOKEN=glpat-...
 GL_BASE_URL=https://gitlab.com
 GL_GROUPS=mygroup
-# Optional for CLI patch
-# CODEX_PATCH_CMD=codex < {{instruction_file}}
 # Debugging
 DEBUG=1
 ```
@@ -119,52 +204,9 @@ DEBUG=1
 
 MIT
 
-## Codex CLI (interactive)
+## Codex CLI
 
-Click **🖥️ Codex CLI** to open an in‑browser terminal wired to a PTY in the container. 
-It runs the command from `CODEX_CMD` (default `codex`) in the current repo directory.
-
-**Env:**  
-- `CODEX_CMD` — command to execute for the Codex CLI (default `codex`).
-
-**Container prerequisites:** the image installs build deps for `node-pty` and attempts `npm i -g @openai/codex`.
-If your CLI binary has a different name, set `CODEX_CMD` accordingly.
-
-## First-run flow
-
-- If `OPENAI_API_KEY` is set, the app skips the CLI intro and goes straight to the Repos screen. You can use **Patch (API)** without any CLI login.
-- If you prefer the CLI-only workflow, leave `OPENAI_API_KEY` unset and use the intro terminal to run `codex` and log in manually, then click **Continue to Repos**.
-
-## Patch via Codex CLI (no API token)
-
-Set an environment variable that defines how to run your Codex CLI in batch to produce edits:
-
-- `CODEX_PATCH_CMD` — a shell template that runs in a temporary git worktree. You can reference:
-  - `{{instruction_file}}` — a file containing the user instruction
-  - `{{repo_root}}` — the worktree path where the CLI should operate
-
-Example (simple stdin-driven CLI):
-
-```bash
-# edits files based on instruction, then we compute `git diff`
-CODEX_PATCH_CMD='codex < {{instruction_file}}'
-```
-
-When you click **Patch (CLI)**, we:
-1. Create a temporary worktree at `HEAD`.
-2. Run your command template in that worktree.
-3. Capture `git diff` as a unified patch and show it.
-4. If you accept, we apply+commit+push in the main worktree.
-
-## Chat-first workflow (no CODEX_PATCH_CMD, no OPENAI token)
-
-1. Open the app → Intro terminal → run `codex` and log in.
-2. Click **Continue to Repos**, open a repo, then click **🖥️ Codex CLI** (already open by default).
-3. Chat with Codex; it edits files directly in the repo working tree.
-4. Click **🔄 Refresh Diff** to preview `git diff` of your working copy.
-5. If happy: enter a commit message and hit **Apply & Push** (stages all, commits, pushes).
-
-> Tip: Leave `CODEX_PATCH_CMD` **unset** and do not provide `OPENAI_API_KEY` if you want CLI-only.
+The terminal auto‑opens when you open a repo and runs `CODEX_CMD` (default `codex`) in that repo. Provide Codex auth/config via a mounted Secret (see the Deployment example) — no web login is needed.
 
 ## Health checks (Kubernetes)
 - **/healthz** — liveness probe
