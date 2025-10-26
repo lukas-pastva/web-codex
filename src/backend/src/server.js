@@ -201,11 +201,14 @@ app.post("/api/git/pull", async (req, res) => {
   try {
     const { repoPath } = req.body;
     const git = simpleGit(repoPath);
+    const before = await git.status();
     await git.fetch();
     const result = await git.pull();
-    res.json({ ok: true, result });
+    const after = await git.status();
+    const upToDate = (after.behind || 0) === 0;
+    res.json({ ok: true, result, status: { before, after, upToDate } });
   } catch (err) {
-    if (DEBUG) console.error("status error:", formatErr(err));
+    if (DEBUG) console.error("pull error:", formatErr(err));
     res.status(500).json({ error: err.message });
   }
 });

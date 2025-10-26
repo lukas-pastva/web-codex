@@ -3,28 +3,11 @@ import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 
-export default function CodexTerminal({ repoPath }) {
+export default function CodexTerminal({ repoPath, isFull = false, onToggleFull }) {
   const ref = useRef(null);
   const termRef = useRef(null);
   const wsRef = useRef(null);
   const fitRef = useRef(null);
-  // Default OFF (raw PTY behavior). User can enable if they prefer line-per-update.
-  const [wrapCR, setWrapCR] = useState(() => {
-    if (typeof localStorage === 'undefined') return false;
-    const v = localStorage.getItem('termWrapCR');
-    return v === '1' ? true : false;
-  });
-  const wrapRef = useRef(wrapCR);
-  useEffect(() => { wrapRef.current = wrapCR; try { localStorage.setItem('termWrapCR', wrapCR ? '1' : '0'); } catch {} }, [wrapCR]);
-
-  const resetTerminalSettings = () => {
-    try { localStorage.removeItem('termWrapCR'); } catch {}
-    setWrapCR(false);
-    const t = termRef.current;
-    if (t && t.options) {
-      t.options.fontSize = 14;
-    }
-  };
 
   const copySelectionUnwrapped = async () => {
     try {
@@ -66,14 +49,8 @@ export default function CodexTerminal({ repoPath }) {
     const proto = (location.protocol === 'https:') ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws/terminal?repoPath=${encodeURIComponent(repoPath||'')}`);
     wsRef.current = ws;
-    // Minimal normalization only when enabled: CR (without LF) -> CRLF
-    const normalize = (s) => {
-      if (!wrapRef.current) return s; // raw PTY stream
-      return s.replace(/\r(?!\n)/g, '\r\n');
-    };
     ws.onmessage = (ev) => {
       let s = typeof ev.data === 'string' ? ev.data : String(ev.data);
-      s = normalize(s);
       term.write(s);
     };
     ws.onclose = () => term.writeln('\r\n[session closed]\r\n');
@@ -108,28 +85,20 @@ export default function CodexTerminal({ repoPath }) {
               }}
             >A-</button>
             <button
-              className={"secondary icon " + (wrapCR ? 'active' : '')}
-              style={{ marginLeft: 6 }}
-              onClick={() => setWrapCR(v => !v)}
-              title={`Wrap progress lines (CR→LF): ${wrapCR ? 'on' : 'off'}`}
-              aria-pressed={wrapCR}
-            >⤶</button>
-            <button
               className="secondary icon"
               style={{ marginLeft: 6 }}
               onClick={copySelectionUnwrapped}
               title="Copy selection without line wraps"
             >📋</button>
-            <button
-              className="secondary icon"
-              style={{ marginLeft: 6 }}
-              onClick={resetTerminalSettings}
-              title="Reset terminal settings (font size, wrap)"
-            >♻️</button>
           </span>
         </div>
+        <div>
+          <button className="secondary" onClick={onToggleFull} title={isFull ? 'Restore terminal' : 'Maximize terminal'}>
+            {isFull ? '🗗' : '⛶'}
+          </button>
+        </div>
       </div>
-      <div ref={ref} className="term" />
+      <div ref={ref} className="term" style={isFull ? { height: 'calc(100vh - 140px)' } : {}} />
     </div>
   );
 }

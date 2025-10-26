@@ -65,6 +65,8 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
   const [openFileContent, setOpenFileContent] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshSeconds, setRefreshSeconds] = useState(5);
+  const [pullInfo, setPullInfo] = useState({ at: null, upToDate: null, behind: 0 });
+  const [termFull, setTermFull] = useState(false);
   const [showCommitCount, setShowCommitCount] = useState(1);
 
   const loadBranches = async () => {
@@ -76,6 +78,11 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
   const refreshLog = async () => {
     const r = await axios.get("/api/git/log", { params: { repoPath: meta.repoPath }});
     setLog(r.data.commits || []);
+  };
+  const refreshStatus = async () => {
+    const r = await axios.get("/api/git/status", { params: { repoPath: meta.repoPath }});
+    const behind = Number(r.data.status?.behind || 0);
+    setPullInfo(p => ({ ...p, upToDate: behind === 0, behind }));
   };
 
   useEffect(() => {
@@ -98,13 +105,17 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
     if (meta.repoPath) {
       loadBranches();
       refreshLog();
+      refreshStatus();
     }
   }, [meta.repoPath]);
 
   // Terminal is always visible
 
   const doPull = async () => {
-    await axios.post("/api/git/pull", { repoPath: meta.repoPath });
+    const r = await axios.post("/api/git/pull", { repoPath: meta.repoPath });
+    const up = Boolean(r.data?.status?.upToDate);
+    const behind = Number(r.data?.status?.after?.behind || 0);
+    setPullInfo({ at: new Date().toISOString(), upToDate: up, behind });
     await refreshLog();
     toast("Pulled latest ✅");
   };
@@ -163,6 +174,11 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
         <div className="pane">
           <div className="actions" style={{marginBottom:8, display:'flex', flexWrap:'wrap', gap:8, alignItems:'center'}}>
             <button className="secondary" onClick={doPull}>git pull</button>
+            <span className="muted">
+              {pullInfo.at
+                ? `Last pull: ${new Date(pullInfo.at).toLocaleTimeString()} • ${pullInfo.upToDate ? 'up to date' : (pullInfo.behind > 0 ? `behind ${pullInfo.behind}` : 'updated')}`
+                : (pullInfo.upToDate === null ? 'Never pulled' : (pullInfo.upToDate ? 'Up to date' : 'Behind'))}
+            </span>
             <select id="branch-select" value={current} onChange={e => doCheckout(e.target.value)}>
               {branches.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
@@ -198,7 +214,7 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
       </div>
 
       <div className="col">
-        <CodexTerminal repoPath={meta.repoPath} />
+        {!termFull && <CodexTerminal repoPath={meta.repoPath} onToggleFull={() => setTermFull(true)} />}
         <div className="pane">
           <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span>Patch preview</span>
@@ -401,6 +417,19 @@ export default function App() {
 
   return (
     <div>
+      {termFull && (
+        <div style={{position:'fixed', inset:0, background:'var(--bg)', zIndex: 9999, padding:12, display:'grid', gridTemplateRows:'auto 1fr'}}>
+          <div className="pane" style={{marginBottom:12}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              <strong>Terminal (fullscreen)</strong>
+              <button className="secondary" onClick={() => setTermFull(false)} title="Restore">🗗</button>
+            </div>
+          </div>
+          <div className="pane" style={{padding:0}}>
+            <CodexTerminal repoPath={meta.repoPath} isFull onToggleFull={() => setTermFull(false)} />
+          </div>
+        </div>
+      )}
       <header>
         <div style={{cursor:'pointer'}} onClick={handleGoHome} title="Home (repos)"><strong>web-codex</strong></div>
         
