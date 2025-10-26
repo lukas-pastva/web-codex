@@ -120,12 +120,24 @@ app.get("/api/providers", async (req, res) => {
       const ghHeaders = { Authorization: `Bearer ${GH_TOKEN}`, Accept: "application/vnd.github+json" };
       try {
         dlog("GitHub: fetching /user");
-        const ghUser = GH_USER || (await axios.get("https://api.github.com/user", { headers: ghHeaders })).data.login;
-        dlog("GitHub user:", ghUser);
-        const userUrl = "https://api.github.com/user/repos?per_page=100";
-        dlog("GET", userUrl);
-        const userRepos = (await axios.get(userUrl, { headers: ghHeaders })).data;
-        out.github[ghUser] = userRepos.map(r => ({ name: r.name, full_name: r.full_name, default_branch: r.default_branch, clone_url: r.clone_url, ssh_url: r.ssh_url, html_url: r.html_url, private: r.private }));
+        const identityResp = await axios.get("https://api.github.com/user", { headers: ghHeaders });
+        const identity = identityResp.data.login;
+        const ghUser = (GH_USER || identity).trim();
+        dlog("GitHub identity:", identity, "target user:", ghUser);
+
+        let url;
+        if (ghUser.toLowerCase() === String(identity).toLowerCase()) {
+          // Owned repos for the authenticated user (includes private)
+          url = "https://api.github.com/user/repos?per_page=100&type=owner";
+        } else {
+          // Owned repos for another user (public only)
+          url = `https://api.github.com/users/${encodeURIComponent(ghUser)}/repos?per_page=100&type=owner`;
+        }
+        dlog("GET", url);
+        const userRepos = (await axios.get(url, { headers: ghHeaders })).data;
+        const onlyOwned = (userRepos || []).filter(r => String(r?.owner?.login || "").toLowerCase() === ghUser.toLowerCase());
+        out.github[ghUser] = onlyOwned.map(r => ({ name: r.name, full_name: r.full_name, default_branch: r.default_branch, clone_url: r.clone_url, ssh_url: r.ssh_url, html_url: r.html_url, private: r.private }));
+
         for (const org of GH_ORGS) {
           try {
             const orgUrl = `https://api.github.com/orgs/${org}/repos?per_page=100`;

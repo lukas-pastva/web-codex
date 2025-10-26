@@ -63,8 +63,10 @@ If the model emits an invalid patch, you can retry with a clearer instruction.
 
 - GitHub:
   - `GH_TOKEN` — Personal access token. Required to list repos and push.
-  - `GH_USER` — GitHub username. Optional when `GH_TOKEN` is set; if omitted, auto‑detects.
-  - `GH_ORGS` — Comma‑separated orgs to show (e.g., `org1,org2`). Optional.
+  - `GH_USER` — Target GitHub username. If omitted, uses the token’s identity.
+    - Only repositories OWNED by `GH_USER` are listed under that tab.
+    - If `GH_USER` ≠ token identity, only public repos can be listed (GitHub API limitation).
+  - `GH_ORGS` — Comma‑separated orgs to show (e.g., `org1,org2`). Optional; lists repositories in each org.
 
 - GitLab:
   - `GL_TOKEN` — Personal access token. Required to list group projects and push.
