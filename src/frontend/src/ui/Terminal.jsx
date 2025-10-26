@@ -28,8 +28,24 @@ export default function CodexTerminal({ repoPath, onClose }) {
         <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span>Codex Chat (interactive terminal)</span>
           <span>
-            <button className="secondary" onClick={()=>termRef.current && termRef.current.setOption("fontSize", (termRef.current.getOption("fontSize")||14)+1)}>A+</button>
-            <button className="secondary" style={{marginLeft:6}} onClick={()=>termRef.current && termRef.current.setOption("fontSize", Math.max(10,(termRef.current.getOption("fontSize")||14)-1))}>A-</button>
+            <button
+              className="secondary"
+              onClick={() => {
+                const t = termRef.current; if (!t) return;
+                const cur = Number(t.options?.fontSize || 14);
+                t.options = { ...t.options, fontSize: cur + 1 };
+              }}
+            >A+</button>
+            <button
+              className="secondary"
+              style={{ marginLeft: 6 }}
+              onClick={() => {
+                const t = termRef.current; if (!t) return;
+                const cur = Number(t.options?.fontSize || 14);
+                const next = Math.max(10, cur - 1);
+                t.options = { ...t.options, fontSize: next };
+              }}
+            >A-</button>
           </span>
         </div>
         <button className="secondary" onClick={onClose}>Close</button>

@@ -57,7 +57,7 @@ function RepoList({ repos, onSelect, favs, toggleFav, query, setQuery }) {
   )
 }
 
-function RepoActions({ repo, meta, setMeta }) {
+function RepoActions({ repo, meta, setMeta, openaiEnabled, cliPatchEnabled }) {
   const toast = useToast();
   const [branches, setBranches] = useState([]);
   const [current, setCurrent] = useState("");
@@ -113,8 +113,7 @@ function RepoActions({ repo, meta, setMeta }) {
   const doCheckout = async (b) => {
     await axios.post("/api/git/checkout", { repoPath: meta.repoPath, branch: b });
     await loadBranches();
-    await loadStatus?.();
-    await refreshDiff?.();
+    await refreshDiff();
   };
 
   const refreshDiff = async () => {
@@ -219,6 +218,17 @@ export default function App() {
   const [current, setCurrent] = useState("");
   const [currentRepo, setCurrentRepo] = useState(null);
   const [meta, setMeta] = useState({ repoPath: "" });
+  const [themeMode, setThemeMode] = useState(() => localStorage.getItem('themeMode') || 'auto'); // auto | dark | light
+
+  useEffect(() => {
+    localStorage.setItem('themeMode', themeMode);
+    const root = document.documentElement;
+    if (themeMode === 'auto') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', themeMode);
+  }, [themeMode]);
+
+  const cycleTheme = () => setThemeMode(m => m === 'auto' ? 'dark' : (m === 'dark' ? 'light' : 'auto'));
+  const themeIcon = themeMode === 'auto' ? '🖥️' : (themeMode === 'dark' ? '🌙' : '☀️');
 
   const fetchConfig = async () => {
     try { const r = await axios.get("/api/config"); setOpenaiEnabled(Boolean(r.data.openai)); setCliPatchEnabled(Boolean(r.data.cliPatch)); } catch {}
@@ -259,6 +269,9 @@ export default function App() {
         <div><strong>web-codex</strong></div>
         <div className="tag">all-in-one</div>
         <div className="tag">OpenAI-powered</div>
+        <div style={{marginLeft:'auto', display:'flex', gap:8, alignItems:'center'}}>
+          <button className="secondary icon" onClick={cycleTheme} title={`Theme: ${themeMode}`}>{themeIcon}</button>
+        </div>
       </header>
       <div className="container">
         {phase === "intro" ? (
@@ -286,7 +299,7 @@ export default function App() {
                 setQuery={setQuery}
               />
             ) : (
-              <RepoActions repo={currentRepo} meta={meta} setMeta={setMeta} />
+              <RepoActions repo={currentRepo} meta={meta} setMeta={setMeta} openaiEnabled={openaiEnabled} cliPatchEnabled={cliPatchEnabled} />
             )}
           </>
         )}
