@@ -6,8 +6,8 @@ All‑in‑one web UI to browse your GitHub/GitLab repos, pull/branch/commit/pus
 
 - Tabs grouped by **GitHub user/orgs** and **GitLab groups**.
 - One‑click `git pull`, **branch** dropdown + checkout.
-- Built‑in terminal running your configured `CODEX_CMD` (auto‑opens when a repo is opened).
-- **Commit history** (last 10) with a “copy hash” action.
+- Built‑in terminal running your configured `CODEX_CMD` (always visible once a repo is open).
+- **Commit history**: shows the latest commit by default; click + to reveal more (10 at a time). Includes a “copy hash” action.
 
 ## Quick Start (Docker)
 
@@ -141,7 +141,7 @@ Security note: provide Git tokens via Secret/env and avoid verbose logs in produ
 
 1. Open the app and choose a provider tab (GitHub user/org or GitLab group).
 2. Click a repo row to clone/open it.
-3. The terminal auto‑opens for CLI usage (`CODEX_CMD`).
+3. The terminal is always visible for CLI usage (`CODEX_CMD`).
 4. Use the actions row to pull/checkout/commit/push.
 5. Diff preview auto‑refreshes by default; adjust interval as needed.
 
@@ -168,6 +168,11 @@ Security note: provide Git tokens via Secret/env and avoid verbose logs in produ
 - Codex CLI:
   - `CODEX_CMD` — Command executed in the in‑browser terminal. Default: `codex`.
 
+- Git identity for commits (optional; backend falls back to sensible defaults):
+  - `GIT_AUTHOR_NAME` / `GIT_COMMITTER_NAME` — author/committer name used for `git commit`.
+  - `GIT_AUTHOR_EMAIL` / `GIT_COMMITTER_EMAIL` — author/committer email.
+  - If unset, backend uses `GH_USER` and `${GH_USER}@users.noreply.github.com` when available.
+
 ## Dev
 
 ```bash
@@ -191,6 +196,11 @@ GL_BASE_URL=https://gitlab.com
 GL_GROUPS=mygroup
 # Debugging
 DEBUG=1
+# CLI
+CODEX_CMD=codex
+# Optional: commit identity
+GIT_AUTHOR_NAME=web-codex
+GIT_AUTHOR_EMAIL=web-codex@example.invalid
 ```
 
 ## Caveats / Next steps

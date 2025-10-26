@@ -238,6 +238,13 @@ app.post("/api/git/commitPush", async (req, res) => {
     const { repoPath, message } = req.body;
     const git = simpleGit(repoPath);
     await git.add("--all");
+    // Ensure author/committer identity is set locally for this repo
+    const name = process.env.GIT_AUTHOR_NAME || process.env.GIT_COMMITTER_NAME || GH_USER || "codex";
+    const email = process.env.GIT_AUTHOR_EMAIL || process.env.GIT_COMMITTER_EMAIL || (GH_USER ? `${GH_USER}@users.noreply.github.com` : "codex@example.invalid");
+    try {
+      await git.addConfig("user.name", name);
+      await git.addConfig("user.email", email);
+    } catch {}
     const msg = message || `codex-${new Date().toISOString()}`;
     const commit = await git.commit(msg);
     // Push with token in remote URL if needed
