@@ -26,6 +26,30 @@ export default function CodexTerminal({ repoPath, onClose }) {
     }
   };
 
+  const copySelectionUnwrapped = async () => {
+    try {
+      const t = termRef.current;
+      let text = '';
+      if (t && typeof t.getSelection === 'function') {
+        text = t.getSelection() || '';
+      }
+      if (!text && typeof window !== 'undefined' && window.getSelection) {
+        text = String(window.getSelection()?.toString() || '');
+      }
+      if (!text) return;
+      // Strip ANSI escapes, CR, and join all newlines (soft wraps) without spaces
+      const ansiRe = /\x1b\[[0-9;]*[A-Za-z]/g;
+      const out = text.replace(ansiRe, '').replace(/\r/g, '').replace(/\n+/g, '');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(out);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = out; ta.style.position = 'fixed'; ta.style.left = '-1000px';
+        document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      }
+    } catch {}
+  };
+
   useEffect(() => {
     const term = new Terminal({ convertEol: true, cursorBlink: true, fontSize: 14 });
     const fit = new FitAddon();
@@ -90,6 +114,12 @@ export default function CodexTerminal({ repoPath, onClose }) {
               title={`Wrap progress lines (CR→LF): ${wrapCR ? 'on' : 'off'}`}
               aria-pressed={wrapCR}
             >⤶</button>
+            <button
+              className="secondary icon"
+              style={{ marginLeft: 6 }}
+              onClick={copySelectionUnwrapped}
+              title="Copy selection without line wraps"
+            >📋</button>
             <button
               className="secondary icon"
               style={{ marginLeft: 6 }}
