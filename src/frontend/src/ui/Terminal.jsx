@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
@@ -7,6 +7,9 @@ export default function CodexTerminal({ repoPath, onClose }) {
   const ref = useRef(null);
   const termRef = useRef(null);
   const wsRef = useRef(null);
+  const [wrapCR, setWrapCR] = useState(() => (typeof localStorage !== 'undefined' ? localStorage.getItem('termWrapCR') !== '0' : true));
+  const wrapRef = useRef(wrapCR);
+  useEffect(() => { wrapRef.current = wrapCR; try { localStorage.setItem('termWrapCR', wrapCR ? '1' : '0'); } catch {} }, [wrapCR]);
 
   useEffect(() => {
     const term = new Terminal({ convertEol: true, cursorBlink: true, fontSize: 14 });
@@ -16,11 +19,15 @@ export default function CodexTerminal({ repoPath, onClose }) {
     const proto = (location.protocol === 'https:') ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws/terminal?repoPath=${encodeURIComponent(repoPath||'')}`);
     wsRef.current = ws;
-    // Normalize CR-only updates to newlines for better readability in browsers
-    const normalizeCr = true;
+    // Normalize progress lines conditionally to avoid overwriting
+    const normalize = (s) => {
+      if (!wrapRef.current) return s;
+      // 1) collapse CRLF to LF; 2) turn any remaining CR into LF to avoid overwrites
+      return s.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    };
     ws.onmessage = (ev) => {
       let s = typeof ev.data === 'string' ? ev.data : String(ev.data);
-      if (normalizeCr) s = s.replace(/\r(?!\n)/g, '\r\n');
+      s = normalize(s);
       term.write(s);
     };
     ws.onclose = () => term.writeln('\r\n[session closed]\r\n');
@@ -52,6 +59,12 @@ export default function CodexTerminal({ repoPath, onClose }) {
                 t.options.fontSize = next;
               }}
             >A-</button>
+            <button
+              className="secondary icon"
+              style={{ marginLeft: 6 }}
+              onClick={() => setWrapCR(v => !v)}
+              title={`Wrap progress lines (CR→LF): ${wrapCR ? 'on' : 'off'}`}
+            >⤶</button>
           </span>
         </div>
         <button className="secondary" onClick={onClose}>Close</button>
