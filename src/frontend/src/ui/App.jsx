@@ -42,14 +42,14 @@ function RepoList({ repos, onSelect, favs, toggleFav, query, setQuery }) {
         <input id="repo-search" placeholder="Search repos…" value={query} onChange={e=>setQuery(e.target.value)} />
       </div>
       {filtered.map((r, i) => (
-        <div key={i} className="repo">
+        <div key={i} className="repo" onClick={() => onSelect(r)} style={{cursor:'pointer'}}>
           <div>
             <div><strong>{r.name}</strong></div>
             <div className="muted">{r.full_name || r.path_with_namespace}</div>
           </div>
           <div style={{display:'flex',gap:6,alignItems:'center'}}>
-            <button className="secondary" onClick={()=>toggleFav(r.full_name||r.path_with_namespace)}>{favs.includes(r.full_name||r.path_with_namespace)?'⭐':'☆'}</button>
-            <button onClick={() => onSelect(r)}>Open</button>
+            <button className="secondary" onClick={(e)=>{e.stopPropagation(); toggleFav(r.full_name||r.path_with_namespace);}}>{favs.includes(r.full_name||r.path_with_namespace)?'⭐':'☆'}</button>
+            <button onClick={(e) => { e.stopPropagation(); onSelect(r); }}>Open</button>
           </div>
         </div>
       ))}
@@ -69,7 +69,7 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
   const [openFileContent, setOpenFileContent] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [refreshSeconds, setRefreshSeconds] = useState(5);
-  const [showTerm, setShowTerm] = useState(false);
+  const [showTerm, setShowTerm] = useState(true);
 
   const loadBranches = async () => {
     const r = await axios.get("/api/git/branches", { params: { repoPath: meta.repoPath }});
@@ -106,6 +106,11 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
     }
   }, [meta.repoPath]);
 
+  // Ensure terminal opens automatically when a repo is opened or switched
+  useEffect(() => {
+    if (meta.repoPath) setShowTerm(true);
+  }, [meta.repoPath]);
+
   const doPull = async () => {
     await axios.post("/api/git/pull", { repoPath: meta.repoPath });
     await refreshLog();
@@ -139,6 +144,27 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
     toast("Pushed ✅");
   };
 
+  const copyHash = async (hash) => {
+    try {
+      await navigator.clipboard.writeText(hash);
+      toast("Commit hash copied ✅");
+    } catch (e) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = hash;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        toast("Commit hash copied ✅");
+      } catch {
+        alert("Failed to copy commit hash");
+      }
+    }
+  };
+
   return (
     <div className="row">
       <div className="col">
@@ -148,7 +174,6 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
             <select id="branch-select" value={current} onChange={e => doCheckout(e.target.value)}>
               {branches.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
-            <button className="secondary" onClick={() => setShowTerm(true)}>🖥️ Codex CLI</button>
             <input placeholder="commit message" value={message} onChange={e=>setMessage(e.target.value)} style={{minWidth:220}}/>
             <button onClick={doApplyCommitPush}>Apply & Push</button>
           </div>
@@ -164,7 +189,10 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
                   <div><strong>{c.message}</strong></div>
                   <div className="muted">{c.hash.slice(0,8)} · {new Date(c.date).toLocaleString()}</div>
                 </div>
-                <div>{c.web_url ? <a href={c.web_url} target="_blank">open</a> : <span className="tag">no link</span>}</div>
+                <div style={{display:'flex', gap:8, alignItems:'center'}}>
+                  {c.web_url ? <a href={c.web_url} target="_blank">open</a> : <span className="tag">no link</span>}
+                  <button className="secondary" onClick={() => copyHash(c.hash)} title="Copy full commit hash">copy hash</button>
+                </div>
               </div>
             ))}
           </div>
