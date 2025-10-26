@@ -7,6 +7,7 @@ export default function CodexTerminal({ repoPath, onClose }) {
   const ref = useRef(null);
   const termRef = useRef(null);
   const wsRef = useRef(null);
+  const fitRef = useRef(null);
   // Default OFF (raw PTY behavior). User can enable if they prefer line-per-update.
   const [wrapCR, setWrapCR] = useState(() => {
     if (typeof localStorage === 'undefined') return false;
@@ -27,8 +28,16 @@ export default function CodexTerminal({ repoPath, onClose }) {
 
   useEffect(() => {
     const term = new Terminal({ convertEol: true, cursorBlink: true, fontSize: 14 });
+    const fit = new FitAddon();
+    fitRef.current = fit;
+    term.loadAddon(fit);
     termRef.current = term;
     term.open(ref.current);
+    // Fit to container after mount
+    try { fit.fit(); } catch {}
+    // Refit on window resize
+    const onResize = () => { try { fitRef.current && fitRef.current.fit(); } catch {} };
+    window.addEventListener('resize', onResize);
     term.writeln('\x1b[1;34mweb-codex\x1b[0m — attaching to Codex CLI...');
     const proto = (location.protocol === 'https:') ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws/terminal?repoPath=${encodeURIComponent(repoPath||'')}`);
@@ -45,7 +54,7 @@ export default function CodexTerminal({ repoPath, onClose }) {
     };
     ws.onclose = () => term.writeln('\r\n[session closed]\r\n');
     term.onData(data => ws.readyState === 1 && ws.send(data));
-    return () => { try { ws.close(); } catch {}; term.dispose(); };
+    return () => { try { ws.close(); } catch {}; window.removeEventListener('resize', onResize); term.dispose(); };
   }, [repoPath]);
 
   return (
@@ -60,6 +69,7 @@ export default function CodexTerminal({ repoPath, onClose }) {
                 const t = termRef.current; if (!t) return;
                 const cur = Number(t.options?.fontSize || 14);
                 t.options.fontSize = cur + 1;
+                try { fitRef.current && fitRef.current.fit(); } catch {}
               }}
             >A+</button>
             <button
@@ -70,6 +80,7 @@ export default function CodexTerminal({ repoPath, onClose }) {
                 const cur = Number(t.options?.fontSize || 14);
                 const next = Math.max(10, cur - 1);
                 t.options.fontSize = next;
+                try { fitRef.current && fitRef.current.fit(); } catch {}
               }}
             >A-</button>
             <button

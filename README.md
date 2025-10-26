@@ -130,13 +130,10 @@ It runs the command from `CODEX_CMD` (default `codex`) in the current repo direc
 **Container prerequisites:** the image installs build deps for `node-pty` and attempts `npm i -g @openai/codex`.
 If your CLI binary has a different name, set `CODEX_CMD` accordingly.
 
-## First-run flow (no OpenAI token needed)
+## First-run flow
 
-When the app opens, you'll see an **Intro** screen with a terminal. Type `codex` and log in manually.
-After you finish the login, click **Continue to Repos** to load your GitHub/GitLab repos.
-
-- No `OPENAI_API_KEY` is required for the CLI flow.
-- The **AI Patch** button is hidden unless `OPENAI_API_KEY` is set (optional).
+- If `OPENAI_API_KEY` is set, the app skips the CLI intro and goes straight to the Repos screen. You can use **Patch (API)** without any CLI login.
+- If you prefer the CLI-only workflow, leave `OPENAI_API_KEY` unset and use the intro terminal to run `codex` and log in manually, then click **Continue to Repos**.
 
 ## Patch via Codex CLI (no API token)
 

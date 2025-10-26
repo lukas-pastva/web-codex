@@ -352,6 +352,12 @@ export default function App() {
     }
   }, [providers, current, phase, pendingRepoId]);
   useEffect(() => { fetchConfig(); }, []);
+  // If API key is present, skip intro and go straight to repos
+  useEffect(() => {
+    if (openaiEnabled && phase === 'intro') {
+      setPhase('repos');
+    }
+  }, [openaiEnabled, phase]);
   useEffect(() => { if (phase === "repos") load(); }, [phase]);
 
   const reposForCurrent = useMemo(() => {
