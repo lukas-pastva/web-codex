@@ -105,7 +105,7 @@
       .tag { background: var(--tag-bg); padding:4px 8px; border-radius: 8px; font-size: 12px; color: var(--tag-text);}
       .container { padding: 16px; }
       .row { display:flex; gap:16px; }
-      .col { flex:1; }
+      .col { flex:1; min-width: 0; }
       .pane { background: var(--pane-bg); border:1px solid var(--border); border-radius: 12px; padding:12px; }
       button { background: var(--primary-bg); border:none; color:white; padding:8px 10px; border-radius:8px; cursor:pointer; }
       button.secondary { background: var(--secondary-bg); color: var(--secondary-text); }
@@ -114,12 +114,17 @@
       select, textarea, input { background: var(--input-bg); color: var(--text); border:1px solid var(--border); border-radius:8px; padding:6px; width:100%; }
       textarea { min-height: 120px; }
       .tabs { display:flex; gap:8px; margin-bottom: 8px; flex-wrap: wrap;}
-      .tab { padding:6px 10px; border-radius: 8px; background: var(--tab-bg); border:1px solid var(--border); cursor:pointer; }
-      .tab.active { background: var(--tab-active-bg); }
+      .tab { padding:6px 10px; border-radius: 8px; background: var(--tab-bg); border:1px solid var(--border); cursor:pointer; transition: background 120ms ease, border-color 120ms ease; display: inline-flex; align-items: center; gap: 6px; }
+      .tab:hover { background: var(--tab-active-bg); }
+      .tab.active { background: var(--tab-active-bg); border-color: var(--primary-bg); font-weight: 600; }
+      .current-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary-bg); display: inline-block; }
       .repo { padding:8px; border-bottom:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center; gap:8px; border-radius:8px; }
       .repo:hover { background: var(--repo-hover); }
       .muted { color: var(--muted); font-size:12px; }
       code.diff { white-space: pre; display:block; overflow:auto; max-height: 50vh; background: var(--input-bg); border:1px solid var(--border); border-radius:8px; padding:12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.35; }
+      /* Ensure terminal never forces flex columns to overflow */
+      .term { width: 100%; overflow: hidden; }
+      .term .xterm, .term .xterm-rows, .term .xterm-screen, .term .xterm-viewport { max-width: 100% !important; }
       /* Pretty diff (diff2html) smaller font as well */
       .d2h-wrapper { font-size: 12px; }
       a { color: var(--link); }
@@ -135,14 +140,14 @@
         button, select, input, textarea { font-size: 16px; } /* prevent iOS zoom */
         code.diff { max-height: 40vh; font-size: 11px; }
         .d2h-wrapper { font-size: 11px; }
-        .term { height: 60vh; }
+        .term { height: 60vh; width: 100%; }
       }
       @media (min-width: 821px) {
         code.diff { max-height: 60vh; }
-        .term { height: 75vh; }
+        .term { height: 75vh; width: 100%; }
         /* Desktop layout: place CLI (cli-col) on the left, everything else (main-col) on the right */
-        .cli-col { order: 0; }
-        .main-col { order: 1; }
+        .cli-col { order: 0; min-width: 0; }
+        .main-col { order: 1; min-width: 0; }
       }
 
       /* Bottom nav for mobile */

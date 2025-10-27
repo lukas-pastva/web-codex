@@ -18,9 +18,18 @@ function GroupTabs({ providers, current, setCurrent }) {
       {items.map((it, idx) => {
         const id = `${it.provider}:${it.key}`;
         const active = current === id;
+        const count = (providers[it.provider]?.[it.key] || []).length;
         return (
-          <div key={idx} className={"tab " + (active ? "active" : "")} onClick={() => setCurrent(id)}>
-            {it.provider} / {it.key}
+          <div
+            key={idx}
+            className={"tab " + (active ? "active" : "")}
+            onClick={() => setCurrent(id)}
+            aria-current={active ? 'page' : undefined}
+            title={`${it.provider} / ${it.key}`}
+          >
+            {active && <span className="current-dot" />}
+            <span style={{fontWeight: active ? 600 : 500}}>{it.provider} / {it.key}</span>
+            <span className="tag" style={{marginLeft: 6}}>{count}</span>
           </div>
         );
       })}
@@ -28,7 +37,8 @@ function GroupTabs({ providers, current, setCurrent }) {
   );
 }
 
-function RepoList({ repos, onSelect }) {
+function RepoList({ repos, onSelect, currentId }) {
+  const [q, setQ] = useState("");
   const sorted = [...repos].sort((a,b)=>{
     const an = (a.name || '').toLowerCase();
     const bn = (b.name || '').toLowerCase();
@@ -36,9 +46,27 @@ function RepoList({ repos, onSelect }) {
     if (an > bn) return 1;
     return 0;
   });
+  const ql = (q || '').trim().toLowerCase();
+  const filtered = ql
+    ? sorted.filter(r => {
+        const fields = [r.name, r.full_name, r.path_with_namespace];
+        return fields.some(v => (v || '').toLowerCase().includes(ql));
+      })
+    : sorted;
+  const [prov, key] = String(currentId || '').split(':');
+  const groupLabel = prov ? `${prov} / ${key || ''}` : '';
   return (
     <div className="pane">
-      {sorted.map((r, i) => (
+      {groupLabel && (
+        <div className="muted" style={{marginBottom: 8}}>Group: <span className="tag">{groupLabel}</span></div>
+      )}
+      <input
+        placeholder="Search repos..."
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        style={{ marginBottom: 8 }}
+      />
+      {filtered.map((r, i) => (
         <div key={i} className="repo" onClick={() => onSelect(r)} style={{cursor:'pointer'}}>
           <div>
             <div><strong>{r.name}</strong></div>
@@ -49,6 +77,9 @@ function RepoList({ repos, onSelect }) {
           </div>
         </div>
       ))}
+      {filtered.length === 0 && (
+        <div className="muted">No repos match your search</div>
+      )}
     </div>
   )
 }
@@ -494,8 +525,10 @@ export default function App() {
             <div className="pane"><div className="muted">Loading repos…</div></div>
           ) : (
             <RepoList
+              key={current}
               repos={reposForCurrent}
               onSelect={openRepo}
+              currentId={current}
             />
           )
         ) : (
