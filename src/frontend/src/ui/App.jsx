@@ -28,11 +28,13 @@ function GroupTabs({ providers, current, setCurrent }) {
   );
 }
 
-function RepoList({ repos, onSelect, favs, toggleFav }) {
+function RepoList({ repos, onSelect }) {
   const sorted = [...repos].sort((a,b)=>{
-    const af = favs.includes(a.full_name||a.path_with_namespace);
-    const bf = favs.includes(b.full_name||b.path_with_namespace);
-    return af===bf ? 0 : (af?-1:1);
+    const an = (a.name || '').toLowerCase();
+    const bn = (b.name || '').toLowerCase();
+    if (an < bn) return -1;
+    if (an > bn) return 1;
+    return 0;
   });
   return (
     <div className="pane">
@@ -43,7 +45,6 @@ function RepoList({ repos, onSelect, favs, toggleFav }) {
             <div className="muted">{r.full_name || r.path_with_namespace}</div>
           </div>
           <div style={{display:'flex',gap:6,alignItems:'center'}}>
-            <button className="secondary" onClick={(e)=>{e.stopPropagation(); toggleFav(r.full_name||r.path_with_namespace);}}>{favs.includes(r.full_name||r.path_with_namespace)?'⭐':'☆'}</button>
             <button onClick={(e) => { e.stopPropagation(); onSelect(r); }}>Open</button>
           </div>
         </div>
@@ -209,7 +210,7 @@ function RepoActions({ repo, meta, setMeta }) {
 
   return (
     <div className="row">
-      <div className="col">
+      <div className="col main-col">
         <div className="pane">
           <div className="actions" style={{marginBottom:8, display:'flex', flexWrap:'wrap', gap:8, alignItems:'center'}}>
             {(() => { const disabled = pullInfo.upToDate === true; return (
@@ -262,11 +263,8 @@ function RepoActions({ repo, meta, setMeta }) {
             )}
           </div>
         </div>
-      </div>
-
-      <div className="col">
-        <CodexTerminal repoPath={meta.repoPath} />
-        <div className="pane">
+        {/* Patch preview moved here so that on desktop the terminal can occupy the left column alone */}
+        <div className="pane" style={{marginTop:16}}>
           <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span>Patch preview</span>
             <span className="muted">Auto refresh: 5s</span>
@@ -291,6 +289,10 @@ function RepoActions({ repo, meta, setMeta }) {
           {showPretty ? <DiffPretty diff={patch} /> : <code className="diff">{patch || "No patch yet"}</code>}
         </div>
       </div>
+
+      <div className="col cli-col">
+        <CodexTerminal repoPath={meta.repoPath} />
+      </div>
     </div>
   )
 }
@@ -298,7 +300,6 @@ function RepoActions({ repo, meta, setMeta }) {
 export default function App() {
   const [phase, setPhase] = useState("repos"); // repos only
   const [providers, setProviders] = useState({ github: {}, gitlab: {} });
-  const [favs, setFavs] = useState(() => JSON.parse(localStorage.getItem("favs")||"[]"));
   const [activePane, setActivePane] = useState("actions"); // actions | terminal | diff | files
   const [current, setCurrent] = useState("");
   const [currentRepo, setCurrentRepo] = useState(null);
@@ -495,8 +496,6 @@ export default function App() {
             <RepoList
               repos={reposForCurrent}
               onSelect={openRepo}
-              favs={favs}
-              toggleFav={(full)=>{const next=favs.includes(full)?favs.filter(f=>f!==full):[...favs,full]; setFavs(next); localStorage.setItem('favs', JSON.stringify(next));}}
             />
           )
         ) : (

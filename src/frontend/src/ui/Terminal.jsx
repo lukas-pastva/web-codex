@@ -5,9 +5,11 @@ import 'xterm/css/xterm.css';
 
 export default function CodexTerminal({ repoPath }) {
   const ref = useRef(null);
+  const containerRef = useRef(null);
   const termRef = useRef(null);
   const wsRef = useRef(null);
   const fitRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const copySelectionUnwrapped = async () => {
     try {
@@ -96,12 +98,54 @@ export default function CodexTerminal({ repoPath }) {
     return () => { try { ws.close(); } catch {}; window.removeEventListener('resize', onResize); term.dispose(); };
   }, [repoPath]);
 
+  // Track fullscreen state changes and refit terminal
+  useEffect(() => {
+    const onFsChange = () => {
+      try {
+        const cur = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+        const active = Boolean(cur && (cur === containerRef.current));
+        setIsFullscreen(active);
+        setTimeout(() => { try { fitRef.current && fitRef.current.fit(); } catch {} }, 50);
+      } catch {}
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    document.addEventListener('mozfullscreenchange', onFsChange);
+    document.addEventListener('MSFullscreenChange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+      document.removeEventListener('mozfullscreenchange', onFsChange);
+      document.removeEventListener('MSFullscreenChange', onFsChange);
+    };
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      const node = containerRef.current;
+      if (!node) return;
+      const cur = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+      if (cur) {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+        else if (document.mozCancelFullScreen) await document.mozCancelFullScreen();
+        else if (document.msExitFullscreen) await document.msExitFullscreen();
+      } else {
+        if (node.requestFullscreen) await node.requestFullscreen();
+        else if (node.webkitRequestFullscreen) await node.webkitRequestFullscreen();
+        else if (node.mozRequestFullScreen) await node.mozRequestFullScreen();
+        else if (node.msRequestFullscreen) await node.msRequestFullscreen();
+      }
+      setTimeout(() => { try { fitRef.current && fitRef.current.fit(); } catch {} }, 100);
+    } catch {}
+  };
+
   return (
-    <div className="pane">
+    <div ref={containerRef} className="pane" style={isFullscreen ? { height: '100vh', display: 'flex', flexDirection: 'column' } : {}}>
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
-        <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div className="muted" style={{display:'flex', alignItems:'center', gap: 12}}>
           <span>Codex Chat</span>
-          <span>
+          <span style={{display:'inline-flex', alignItems:'center'}}>
             <button
               className="secondary"
               onClick={() => {
@@ -136,9 +180,15 @@ export default function CodexTerminal({ repoPath }) {
             >📥</button>
           </span>
         </div>
-        <div></div>
+        <div>
+          <button
+            className={"secondary icon" + (isFullscreen ? " active" : "")}
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen terminal'}
+          >{isFullscreen ? '⤡' : '⤢'}</button>
+        </div>
       </div>
-      <div ref={ref} className="term" />
+      <div ref={ref} className="term" style={isFullscreen ? { flex: 1, minHeight: 0, height: 'auto' } : {}} />
       {showPasteModal && (
         <div style={{position:'fixed',left:0,top:0,right:0,bottom:0,background:'rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
           <div style={{background:'#1e1e1e',border:'1px solid #444',borderRadius:6,width:'min(800px, 95vw)',maxWidth:'95vw',padding:12,boxShadow:'0 6px 24px rgba(0,0,0,0.5)'}}>
