@@ -27,8 +27,9 @@ RUN npm --prefix backend run build
 FROM node:20-alpine
 WORKDIR /app
 ENV NODE_ENV=production
-# Build deps for node-pty; shell tools; optional git
-RUN apk add --no-cache bash git g++ make python3 linux-headers
+# Build deps for node-pty; shell tools; optional git; PHP CLI for Codex tasks
+RUN apk add --no-cache bash git g++ make python3 linux-headers \
+    && (apk add --no-cache php || apk add --no-cache php83 php83-cli)
 # Optional: install Codex CLI if available in your registry
 # If your Codex CLI package name differs, set CODEX_CMD accordingly
 RUN npm i -g @openai/codex || true
