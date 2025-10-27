@@ -53,13 +53,8 @@ function RepoList({ repos, onSelect, currentId }) {
         return fields.some(v => (v || '').toLowerCase().includes(ql));
       })
     : sorted;
-  const [prov, key] = String(currentId || '').split(':');
-  const groupLabel = prov ? `${prov} / ${key || ''}` : '';
   return (
     <div className="pane">
-      {groupLabel && (
-        <div className="muted" style={{marginBottom: 8}}>Group: <span className="tag">{groupLabel}</span></div>
-      )}
       <input
         placeholder="Search repos..."
         value={q}
