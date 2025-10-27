@@ -358,13 +358,6 @@ export default function App() {
   const routeRef = useRef({});
   const [pendingRepoId, setPendingRepoId] = useState("");
 
-  const handleBackToGroup = () => {
-    setCurrentRepo(null);
-    setMeta({ repoPath: "" });
-    // ensure URL drops the repo param immediately
-    updateHashFromState('repos', current, null);
-  };
-
   const handleGoHome = () => {
     setPhase('repos');
     setCurrentRepo(null);
@@ -553,7 +546,6 @@ export default function App() {
           <>
             <div className="pane" style={{marginBottom:12}}>
               <div className="actions" style={{display:'flex',alignItems:'center',gap:8}}>
-                <button className="secondary" onClick={handleBackToGroup}>← Back to group</button>
                 <div className="muted">
                   {(() => { const [prov, key] = (current||'').split(':'); return `${prov||''}${key? ' / ' + key : ''}`; })()}
                   {currentRepo ? ` / ${currentRepo.name}` : ''}
