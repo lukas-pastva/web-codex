@@ -89,6 +89,10 @@ function RepoActions({ repo, meta, setMeta }) {
   const [showPretty, setShowPretty] = useState(false);
   const [openFile, setOpenFile] = useState(null);
   const [openFileContent, setOpenFileContent] = useState("");
+  // Patch preview interactions
+  const [selectedDiffFile, setSelectedDiffFile] = useState("");
+  const diffPaneRef = useRef(null);
+  const [isDiffFullscreen, setIsDiffFullscreen] = useState(false);
   // Always auto-refresh patch every 5 seconds (mobile-friendly)
   const [pullInfo, setPullInfo] = useState({ at: null, upToDate: null, behind: 0 });
   const [pushing, setPushing] = useState(false);
@@ -216,6 +220,83 @@ function RepoActions({ repo, meta, setMeta }) {
     }
   };
 
+  // Keep selected file in sync with changed files list
+  useEffect(() => {
+    if (!selectedDiffFile) return;
+    const exists = changedFiles.some(f => f.path === selectedDiffFile);
+    if (!exists) setSelectedDiffFile("");
+  }, [changedFiles, selectedDiffFile]);
+
+  // Extract only the diff block for a given file
+  const extractFileDiff = (diffText, filePath) => {
+    try {
+      if (!diffText || !filePath) return diffText || "";
+      const lines = String(diffText).split(/\n/);
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
+        if (line.startsWith('diff --git ')) {
+          const m = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
+          const from = m ? m[1] : '';
+          const to = m ? m[2] : '';
+          let j = i + 1;
+          while (j < lines.length && !lines[j].startsWith('diff --git ')) j++;
+          if (from === filePath || to === filePath) {
+            return lines.slice(i, j).join('\n');
+          }
+          i = j; continue;
+        }
+        i++;
+      }
+      return ""; // no match
+    } catch { return diffText || ""; }
+  };
+
+  const displayedPatch = useMemo(() => {
+    if (!selectedDiffFile) return patch || "";
+    return extractFileDiff(patch || "", selectedDiffFile) || "";
+  }, [patch, selectedDiffFile]);
+
+  // Fullscreen handling for diff pane
+  useEffect(() => {
+    const onFsChange = () => {
+      try {
+        const cur = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+        const active = Boolean(cur && (cur === diffPaneRef.current));
+        setIsDiffFullscreen(active);
+      } catch {}
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    document.addEventListener('mozfullscreenchange', onFsChange);
+    document.addEventListener('MSFullscreenChange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+      document.removeEventListener('mozfullscreenchange', onFsChange);
+      document.removeEventListener('MSFullscreenChange', onFsChange);
+    };
+  }, []);
+
+  const toggleDiffFullscreen = async () => {
+    try {
+      const node = diffPaneRef.current;
+      if (!node) return;
+      const cur = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+      if (cur) {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+        else if (document.mozCancelFullScreen) await document.mozCancelFullScreen();
+        else if (document.msExitFullscreen) await document.msExitFullscreen();
+      } else {
+        if (node.requestFullscreen) await node.requestFullscreen();
+        else if (node.webkitRequestFullscreen) await node.webkitRequestFullscreen();
+        else if (node.mozRequestFullScreen) await node.mozRequestFullScreen();
+        else if (node.msRequestFullscreen) await node.msRequestFullscreen();
+      }
+    } catch {}
+  };
+
   const copyHash = async (hash) => {
     try {
       await navigator.clipboard.writeText(hash);
@@ -308,18 +389,51 @@ function RepoActions({ repo, meta, setMeta }) {
           </div>
         </div>
         {/* Patch preview moved here so that on desktop the terminal can occupy the left column alone */}
-        <div className="pane" style={{marginTop:16}}>
+        <div ref={diffPaneRef} className="pane" style={isDiffFullscreen ? { marginTop: 16, height: '100vh', display: 'flex', flexDirection: 'column' } : { marginTop: 16 }}>
           <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span>Patch preview</span>
+            <span style={{display:'inline-flex',alignItems:'center',gap:6}}>
+              {selectedDiffFile ? (
+                <button className="secondary" onClick={() => setSelectedDiffFile("")} title="Show all changes">Show all</button>
+              ) : null}
+              <button
+                className={"secondary icon" + (isDiffFullscreen ? " active" : "")}
+                onClick={toggleDiffFullscreen}
+                title={isDiffFullscreen ? 'Exit fullscreen' : 'Fullscreen patch'}
+              >{isDiffFullscreen ? '⤡' : '⤢'}</button>
+            </span>
           </div>
           {changedFiles.length > 0 && (
             <div className="muted" style={{margin:"6px 0 8px 0"}}>
               <div>
-                <div style={{marginBottom:6}}>{changedFiles.length} file{changedFiles.length!==1?'s':''} changed</div>
+                <div style={{marginBottom:6}}>
+                  {changedFiles.length} file{changedFiles.length!==1?'s':''} changed
+                  {selectedDiffFile ? (
+                    <>
+                      <span style={{marginLeft:8}}>• showing</span>
+                      <span className="badge gray" style={{marginLeft:6}}>{selectedDiffFile}</span>
+                    </>
+                  ) : null}
+                </div>
                 <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                  {(showAllChanged ? changedFiles : changedFiles.slice(0, 15)).map((f, idx) => (
-                    <span key={idx} className={"badge " + (f.status==='added'?'green':(f.status==='deleted'?'red':'gray'))} title={f.status}>{f.path}</span>
-                  ))}
+                  {(showAllChanged ? changedFiles : changedFiles.slice(0, 15)).map((f, idx) => {
+                    const active = selectedDiffFile === f.path;
+                    const cls = "badge " + (f.status==='added'?'green':(f.status==='deleted'?'red':'gray')) + (active ? " selected" : " interactive");
+                    const onClick = () => setSelectedDiffFile(p => (p === f.path ? "" : f.path));
+                    const onKey = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } };
+                    return (
+                      <span
+                        key={idx}
+                        className={cls}
+                        title={(f.status||'') + (active ? ' • selected' : '')}
+                        role="button"
+                        tabIndex={0}
+                        onClick={onClick}
+                        onKeyDown={onKey}
+                        aria-pressed={active ? 'true' : 'false'}
+                      >{f.path}</span>
+                    );
+                  })}
                   {(!showAllChanged && changedFiles.length > 15) && (
                     <button className="secondary" onClick={() => setShowAllChanged(true)}>+{changedFiles.length - 15} more</button>
                   )}
@@ -327,7 +441,11 @@ function RepoActions({ repo, meta, setMeta }) {
               </div>
             </div>
           )}
-          {(patch || '').trim() ? (showPretty ? <DiffPretty diff={patch} /> : <code className="diff">{patch}</code>) : null}
+          {(displayedPatch || '').trim() ? (
+            showPretty
+              ? <DiffPretty diff={displayedPatch} />
+              : <code className="diff" style={isDiffFullscreen ? { flex: 1, minHeight: 0, maxHeight: 'none' } : {}}>{displayedPatch}</code>
+          ) : null}
         </div>
       </div>
 
