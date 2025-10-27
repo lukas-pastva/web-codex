@@ -311,7 +311,6 @@ function RepoActions({ repo, meta, setMeta }) {
         <div className="pane" style={{marginTop:16}}>
           <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span>Patch preview</span>
-            <span className="muted">Auto refresh: 5s</span>
           </div>
           {changedFiles.length > 0 && (
             <div className="muted" style={{margin:"6px 0 8px 0"}}>
