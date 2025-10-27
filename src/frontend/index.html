@@ -163,6 +163,18 @@
       /* Commits list: fixed height with scroll */
       .commit-list { max-height: 320px; overflow: auto; padding-right: 4px; }
 
+      /* Copy button feedback */
+      @keyframes pop {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.06); }
+        100% { transform: scale(1); }
+      }
+      button.secondary.copied {
+        background: var(--primary-bg);
+        color: #fff;
+        animation: pop 200ms ease-out;
+      }
+
     </style>
   </head>
   <body>

@@ -100,6 +100,9 @@ function RepoActions({ repo, meta, setMeta }) {
   // Only show the latest commit
   const [changedFiles, setChangedFiles] = useState([]);
   const [showAllChanged, setShowAllChanged] = useState(false);
+  // Copy feedback state for the copy-hash button
+  const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef(null);
 
   const loadBranches = async () => {
     const r = await axios.get("/api/git/branches", { params: { repoPath: meta.repoPath }});
@@ -221,7 +224,12 @@ function RepoActions({ repo, meta, setMeta }) {
   const copyHash = async (hash) => {
     try {
       await navigator.clipboard.writeText(hash);
-      toast("Commit hash copied ✅");
+      // Visual feedback on the button
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      setCopied(true);
+      copiedTimerRef.current = setTimeout(() => setCopied(false), 1500);
+      // Toast feedback (also works across the app)
+      toast && toast("Commit hash copied ✅");
     } catch (e) {
       try {
         const ta = document.createElement('textarea');
@@ -232,7 +240,10 @@ function RepoActions({ repo, meta, setMeta }) {
         ta.select();
         document.execCommand('copy');
         document.body.removeChild(ta);
-        toast("Commit hash copied ✅");
+        if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+        setCopied(true);
+        copiedTimerRef.current = setTimeout(() => setCopied(false), 1500);
+        toast && toast("Commit hash copied ✅");
       } catch {
         alert("Failed to copy commit hash");
       }
@@ -286,7 +297,14 @@ function RepoActions({ repo, meta, setMeta }) {
                   {` · ${new Date(log[0].date).toLocaleString()}`}
                 </div>
                 <div style={{display:'flex', gap:8, alignItems:'center'}}>
-                  <button className="secondary" onClick={() => copyHash(log[0].hash)} title="Copy full commit hash">copy hash</button>
+                  <button
+                    className={"secondary" + (copied ? " copied" : "")}
+                    onClick={() => copyHash(log[0].hash)}
+                    title="Copy full commit hash"
+                    aria-live="polite"
+                  >
+                    {copied ? '✓ Copied' : 'copy hash'}
+                  </button>
                 </div>
               </>
             ) : (
