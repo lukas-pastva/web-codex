@@ -313,8 +313,8 @@ function RepoActions({ repo, meta, setMeta }) {
             <span>Patch preview</span>
             <span className="muted">Auto refresh: 5s</span>
           </div>
-          <div className="muted" style={{margin:"6px 0 8px 0"}}>
-            {changedFiles.length ? (
+          {changedFiles.length > 0 && (
+            <div className="muted" style={{margin:"6px 0 8px 0"}}>
               <div>
                 <div style={{marginBottom:6}}>{changedFiles.length} file{changedFiles.length!==1?'s':''} changed</div>
                 <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
@@ -326,11 +326,9 @@ function RepoActions({ repo, meta, setMeta }) {
                   )}
                 </div>
               </div>
-            ) : (
-              <div>No changes</div>
-            )}
-          </div>
-          {showPretty ? <DiffPretty diff={patch} /> : <code className="diff">{patch || "No patch yet"}</code>}
+            </div>
+          )}
+          {(patch || '').trim() ? (showPretty ? <DiffPretty diff={patch} /> : <code className="diff">{patch}</code>) : null}
         </div>
       </div>
 
