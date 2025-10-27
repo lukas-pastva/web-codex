@@ -269,7 +269,9 @@ app.get("/api/git/status", async (req, res) => {
     const repoPath = req.query.repoPath;
     if (!repoPath) return res.status(400).json({ error: "repoPath is required" });
     const git = simpleGit(repoPath);
+    try { await git.fetch(); } catch {}
     const st = await git.status();
+    res.set("Cache-Control", "no-store");
     res.json({ ok: true, status: st });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -348,7 +350,9 @@ app.get("/api/git/status", async (req, res) => {
     const repoPath = req.query.repoPath;
     if (!repoPath) return res.status(400).json({ error: "repoPath is required" });
     const git = simpleGit(repoPath);
+    try { await git.fetch(); } catch {}
     const st = await git.status();
+    res.set("Cache-Control", "no-store");
     res.json({ ok: true, status: st });
   } catch (err) {
     res.status(500).json({ error: err.message });

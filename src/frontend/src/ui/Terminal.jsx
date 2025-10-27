@@ -19,6 +19,14 @@ export default function CodexTerminal({ repoPath }) {
       if (!text && typeof window !== 'undefined' && window.getSelection) {
         text = String(window.getSelection()?.toString() || '');
       }
+      if (!text && ref.current) {
+        try {
+          const rows = ref.current.querySelectorAll('.xterm-rows > div');
+          if (rows && rows.length) {
+            text = Array.from(rows).map(r => r.textContent || '').join('\n');
+          }
+        } catch {}
+      }
       if (!text) return;
       // Strip ANSI escapes, CR, and join all newlines (soft wraps) without spaces
       const ansiRe = /\x1b\[[0-9;]*[A-Za-z]/g;
@@ -33,8 +41,37 @@ export default function CodexTerminal({ repoPath }) {
     } catch {}
   };
 
+  const pasteFromClipboard = async () => {
+    try {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== 1) return;
+      let text = '';
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        try {
+          text = await navigator.clipboard.readText();
+        } catch (e) {
+          // fall through to manual prompt
+        }
+      }
+      if (!text) {
+        // Fallback prompt for environments where clipboard read is blocked
+        // eslint-disable-next-line no-alert
+        const manual = window.prompt('Paste text to send to terminal:');
+        if (manual) text = manual;
+      }
+      if (!text) return;
+      ws.send(text);
+    } catch {}
+  };
+
   useEffect(() => {
-    const term = new Terminal({ convertEol: true, cursorBlink: true, fontSize: 14 });
+    // Smaller default font on mobile; slightly smaller in general
+    const baseFontSize = (() => {
+      try {
+        return (window.matchMedia && window.matchMedia('(max-width: 820px)').matches) ? 12 : 13;
+      } catch { return 13; }
+    })();
+    const term = new Terminal({ convertEol: true, cursorBlink: true, fontSize: baseFontSize });
     const fit = new FitAddon();
     fitRef.current = fit;
     term.loadAddon(fit);
@@ -90,6 +127,12 @@ export default function CodexTerminal({ repoPath }) {
               onClick={copySelectionUnwrapped}
               title="Copy selection without line wraps"
             >📋</button>
+            <button
+              className="secondary icon"
+              style={{ marginLeft: 6 }}
+              onClick={pasteFromClipboard}
+              title="Paste clipboard into terminal"
+            >📥</button>
           </span>
         </div>
         <div></div>

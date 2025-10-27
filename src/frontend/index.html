@@ -119,7 +119,9 @@
       .repo { padding:8px; border-bottom:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center; gap:8px; border-radius:8px; }
       .repo:hover { background: var(--repo-hover); }
       .muted { color: var(--muted); font-size:12px; }
-      code.diff { white-space: pre; display:block; overflow:auto; max-height: 50vh; background: var(--input-bg); border:1px solid var(--border); border-radius:8px; padding:12px; }
+      code.diff { white-space: pre; display:block; overflow:auto; max-height: 50vh; background: var(--input-bg); border:1px solid var(--border); border-radius:8px; padding:12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.35; }
+      /* Pretty diff (diff2html) smaller font as well */
+      .d2h-wrapper { font-size: 12px; }
       a { color: var(--link); }
     
       /* Responsive enhancements */
@@ -131,7 +133,8 @@
         .tabs { overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
         .tab { display: inline-block; }
         button, select, input, textarea { font-size: 16px; } /* prevent iOS zoom */
-        code.diff { max-height: 40vh; }
+        code.diff { max-height: 40vh; font-size: 11px; }
+        .d2h-wrapper { font-size: 11px; }
         .term { height: 60vh; }
       }
       @media (min-width: 821px) {

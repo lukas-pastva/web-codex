@@ -3,7 +3,6 @@ import axios from "axios";
 import CodexTerminal from "./Terminal.jsx";
 import FileTree from "./FileTree.jsx";
 import DiffPretty from "./DiffPretty.jsx";
-import HelpModal from "./HelpModal.jsx";
 import { ToastProvider, useToast } from "./ToastContext.jsx";
 
 function GroupTabs({ providers, current, setCurrent }) {
@@ -53,7 +52,7 @@ function RepoList({ repos, onSelect, favs, toggleFav }) {
   )
 }
 
-function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
+function RepoActions({ repo, meta, setMeta }) {
   const toast = useToast();
   const [branches, setBranches] = useState([]);
   const [current, setCurrent] = useState("");
@@ -63,11 +62,12 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
   const [showPretty, setShowPretty] = useState(false);
   const [openFile, setOpenFile] = useState(null);
   const [openFileContent, setOpenFileContent] = useState("");
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [refreshSeconds, setRefreshSeconds] = useState(5);
+  // Always auto-refresh patch every 5 seconds (mobile-friendly)
   const [pullInfo, setPullInfo] = useState({ at: null, upToDate: null, behind: 0 });
   const [pushing, setPushing] = useState(false);
-  const [showCommitCount, setShowCommitCount] = useState(1);
+  // Only show the latest commit
+  const [changedFiles, setChangedFiles] = useState([]);
+  const [showAllChanged, setShowAllChanged] = useState(false);
 
   const loadBranches = async () => {
     const r = await axios.get("/api/git/branches", { params: { repoPath: meta.repoPath }});
@@ -85,21 +85,7 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
     setPullInfo(p => ({ ...p, upToDate: behind === 0, behind }));
   };
 
-  useEffect(() => {
-    const onKey = (e) => {
-      const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
-      const typing = e.target?.isContentEditable || ['input','textarea','select','button'].includes(tag);
-      if (typing) return; // ignore shortcuts while typing / interacting with controls
-      if (e.key === 'p') { e.preventDefault(); doPull(); }
-      if (e.key === 'b') { e.preventDefault(); const el = document.getElementById('branch-select'); el && el.focus(); }
-      // terminal is always visible; no 't' toggle
-      if (e.key === 'd') { e.preventDefault(); refreshDiff(); }
-      if (e.key === '?') { e.preventDefault(); onToggleHelp && onToggleHelp(); }
-      if (e.key === 'c') { e.preventDefault(); doApplyCommitPush(); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  // Keyboard shortcuts removed for simplicity and mobile friendliness
 
   useEffect(() => {
     if (meta.repoPath) {
@@ -133,13 +119,56 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
     setPatch(r.data.diff || "");
   };
 
-  // Auto refresh diff
+  // Parse changed files from unified diff
   useEffect(() => {
-    if (!autoRefresh || !meta.repoPath) return;
-    const ms = Math.max(2000, Number(refreshSeconds) * 1000 || 5000);
-    const id = setInterval(() => { refreshDiff().catch(()=>{}); }, ms);
+    try {
+      const diff = patch || '';
+      const lines = diff.split(/\n/);
+      const out = [];
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
+        const m = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
+        if (m) {
+          let from = m[1];
+          let to = m[2];
+          let status = 'modified';
+          let j = i + 1;
+          while (j < lines.length && !lines[j].startsWith('diff --git ')) {
+            const l = lines[j];
+            if (/^new file mode /.test(l)) status = 'added';
+            if (/^deleted file mode /.test(l)) status = 'deleted';
+            const rnTo = /^rename to (.+)$/.exec(l);
+            const rnFrom = /^rename from (.+)$/.exec(l);
+            if (rnTo || rnFrom) status = 'renamed';
+            if (rnTo) to = rnTo[1];
+            j++;
+          }
+          const path = status === 'deleted' ? from : to;
+          out.push({ path, status });
+          i = j;
+          continue;
+        }
+        i++;
+      }
+      setChangedFiles(out);
+      setShowAllChanged(false);
+    } catch { setChangedFiles([]); setShowAllChanged(false); }
+  }, [patch]);
+
+  // Auto refresh diff every 5 seconds
+  useEffect(() => {
+    if (!meta.repoPath) return;
+    const id = setInterval(() => { refreshDiff().catch(()=>{}); }, 5000);
     return () => clearInterval(id);
-  }, [autoRefresh, refreshSeconds, meta.repoPath]);
+  }, [meta.repoPath]);
+
+  // Periodically refresh upstream status to enable/disable pull button
+  useEffect(() => {
+    if (!meta.repoPath) return;
+    const id = setInterval(() => { refreshStatus().catch(()=>{}); }, 5000); // 5s
+    return () => clearInterval(id);
+  }, [meta.repoPath]);
 
   const doApplyCommitPush = async () => {
     try {
@@ -183,7 +212,15 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
       <div className="col">
         <div className="pane">
           <div className="actions" style={{marginBottom:8, display:'flex', flexWrap:'wrap', gap:8, alignItems:'center'}}>
-            <button className="secondary" onClick={doPull}>git pull</button>
+            {(() => { const disabled = pullInfo.upToDate === true; return (
+              <button
+                className="secondary"
+                onClick={doPull}
+                disabled={disabled}
+                title={disabled ? 'Already up to date' : 'Fetch and pull latest'}
+                style={disabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
+              >git pull</button>
+            ); })()}
             <span className="muted">
               {pullInfo.at
                 ? `Last pull: ${new Date(pullInfo.at).toLocaleTimeString()} • ${pullInfo.upToDate ? 'up to date' : (pullInfo.behind > 0 ? `behind ${pullInfo.behind}` : 'updated')}`
@@ -204,25 +241,25 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
         <FileTree repoPath={meta.repoPath} onOpen={async (p)=>{ const r=await axios.get("/api/git/file",{params:{repoPath:meta.repoPath,path:p}}); setOpenFile(p); setOpenFileContent(r.data.text||""); }} />
         <div className="pane" style={{marginTop:16}}>
           <div className="muted" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span>{showCommitCount === 1 ? 'Last commit' : `Last ${showCommitCount} commits`}</span>
-            <span>
-              {log.length > showCommitCount && (
-                <button className="secondary icon" onClick={() => setShowCommitCount(c => Math.min(log.length, c + 10))} title="Show more commits">+</button>
-              )}
-            </span>
+            <span>Last commit</span>
+            <span></span>
           </div>
-          <div className="commit-list">
-            {log.slice(0, showCommitCount).map(c => (
-              <div key={c.hash} className="repo">
-                <div>
-                  <div><strong>{c.message}</strong></div>
-                  <div className="muted">{c.hash.slice(0,8)} · {new Date(c.date).toLocaleString()}</div>
+          <div className="repo">
+            {log && log.length ? (
+              <>
+                <div className="muted">
+                  <a href={log[0].web_url || '#'} target="_blank" rel="noreferrer" title="Open in provider">
+                    {log[0].hash.slice(0, 8)}
+                  </a>
+                  {` · ${new Date(log[0].date).toLocaleString()}`}
                 </div>
                 <div style={{display:'flex', gap:8, alignItems:'center'}}>
-                  <button className="secondary" onClick={() => copyHash(c.hash)} title="Copy full commit hash">copy hash</button>
+                  <button className="secondary" onClick={() => copyHash(log[0].hash)} title="Copy full commit hash">copy hash</button>
                 </div>
-              </div>
-            ))}
+              </>
+            ) : (
+              <div className="muted">No commits</div>
+            )}
           </div>
         </div>
       </div>
@@ -232,13 +269,24 @@ function RepoActions({ repo, meta, setMeta, onToggleHelp }) {
         <div className="pane">
           <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span>Patch preview</span>
-            <span>
-              <label style={{display:"inline-flex",alignItems:"center",gap:6}}>
-                <input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)} />
-                Auto refresh
-              </label>
-              <input type="number" min="2" max="60" value={refreshSeconds} onChange={e=>setRefreshSeconds(e.target.value)} style={{width:70, marginLeft:8}} /> s
-            </span>
+            <span className="muted">Auto refresh: 5s</span>
+          </div>
+          <div className="muted" style={{margin:"6px 0 8px 0"}}>
+            {changedFiles.length ? (
+              <div>
+                <div style={{marginBottom:6}}>{changedFiles.length} file{changedFiles.length!==1?'s':''} changed</div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                  {(showAllChanged ? changedFiles : changedFiles.slice(0, 15)).map((f, idx) => (
+                    <span key={idx} className={"badge " + (f.status==='added'?'green':(f.status==='deleted'?'red':'gray'))} title={f.status}>{f.path}</span>
+                  ))}
+                  {(!showAllChanged && changedFiles.length > 15) && (
+                    <button className="secondary" onClick={() => setShowAllChanged(true)}>+{changedFiles.length - 15} more</button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div>No changes</div>
+            )}
           </div>
           {showPretty ? <DiffPretty diff={patch} /> : <code className="diff">{patch || "No patch yet"}</code>}
         </div>
@@ -251,7 +299,6 @@ export default function App() {
   const [phase, setPhase] = useState("repos"); // repos only
   const [providers, setProviders] = useState({ github: {}, gitlab: {} });
   const [favs, setFavs] = useState(() => JSON.parse(localStorage.getItem("favs")||"[]"));
-  const [showHelp, setShowHelp] = useState(false);
   const [activePane, setActivePane] = useState("actions"); // actions | terminal | diff | files
   const [current, setCurrent] = useState("");
   const [currentRepo, setCurrentRepo] = useState(null);
@@ -436,11 +483,6 @@ export default function App() {
         <div style={{cursor:'pointer'}} onClick={handleGoHome} title="Home (repos)"><strong>web-codex</strong></div>
         
         <div style={{marginLeft:'auto', display:'flex', gap:8, alignItems:'center'}}>
-          <button
-            className="secondary icon"
-            onClick={() => setShowHelp(true)}
-            title={"Shortcuts: p pull, b branch, d diff, c commit. Disabled while typing. Press ? for full help."}
-          >⌨️</button>
           <button className="secondary icon" onClick={cycleTheme} title={`Theme: ${themeMode}`}>{themeIcon}</button>
         </div>
       </header>
@@ -472,12 +514,11 @@ export default function App() {
               repo={currentRepo}
               meta={meta}
               setMeta={setMeta}
-              onToggleHelp={() => setShowHelp(h => !h)}
             />
           </>
         )}
       </div>
-      <HelpModal open={showHelp} onClose={() => setShowHelp(false)} />
+      {null}
     </div>
   );
 }
