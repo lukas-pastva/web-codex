@@ -41,6 +41,8 @@ export default function CodexTerminal({ repoPath }) {
     } catch {}
   };
 
+  const [showPasteModal, setShowPasteModal] = useState(false);
+  const [pasteBuffer, setPasteBuffer] = useState("");
   const pasteFromClipboard = async () => {
     try {
       const ws = wsRef.current;
@@ -50,16 +52,15 @@ export default function CodexTerminal({ repoPath }) {
         try {
           text = await navigator.clipboard.readText();
         } catch (e) {
-          // fall through to manual prompt
+          // fall through to manual modal
         }
       }
       if (!text) {
-        // Fallback prompt for environments where clipboard read is blocked
-        // eslint-disable-next-line no-alert
-        const manual = window.prompt('Paste text to send to terminal:');
-        if (manual) text = manual;
+        // Open a multiline modal to allow manual paste
+        setPasteBuffer("");
+        setShowPasteModal(true);
+        return;
       }
-      if (!text) return;
       ws.send(text);
     } catch {}
   };
@@ -99,7 +100,7 @@ export default function CodexTerminal({ repoPath }) {
     <div className="pane">
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
         <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span>Codex Chat (interactive terminal)</span>
+          <span>Codex Chat</span>
           <span>
             <button
               className="secondary"
@@ -138,6 +139,33 @@ export default function CodexTerminal({ repoPath }) {
         <div></div>
       </div>
       <div ref={ref} className="term" />
+      {showPasteModal && (
+        <div style={{position:'fixed',left:0,top:0,right:0,bottom:0,background:'rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
+          <div style={{background:'#1e1e1e',border:'1px solid #444',borderRadius:6,width:'min(800px, 95vw)',maxWidth:'95vw',padding:12,boxShadow:'0 6px 24px rgba(0,0,0,0.5)'}}>
+            <div style={{marginBottom:8,fontWeight:600}}>Paste text to send to terminal</div>
+            <textarea
+              value={pasteBuffer}
+              onChange={e => setPasteBuffer(e.target.value)}
+              placeholder="Paste here..."
+              style={{width:'100%',height:'40vh',resize:'vertical',background:'#111',color:'#eee',border:'1px solid #333',borderRadius:4,padding:8,fontFamily:'monospace',fontSize:13}}
+              autoFocus
+            />
+            <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:10}}>
+              <button className="secondary" onClick={() => { setShowPasteModal(false); setPasteBuffer(''); }}>Cancel</button>
+              <button
+                onClick={() => {
+                  try {
+                    const ws = wsRef.current;
+                    if (ws && ws.readyState === 1 && pasteBuffer) ws.send(pasteBuffer);
+                  } catch {}
+                  setShowPasteModal(false);
+                  setPasteBuffer('');
+                }}
+              >Send</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
