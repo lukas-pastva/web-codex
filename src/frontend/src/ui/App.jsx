@@ -95,6 +95,7 @@ function RepoActions({ repo, meta, setMeta }) {
   const [isDiffFullscreen, setIsDiffFullscreen] = useState(false);
   // Always auto-refresh patch every 5 seconds (mobile-friendly)
   const [pullInfo, setPullInfo] = useState({ at: null, upToDate: null, behind: 0 });
+  const [pulling, setPulling] = useState(false);
   const [pushing, setPushing] = useState(false);
   // Only show the latest commit
   const [changedFiles, setChangedFiles] = useState([]);
@@ -133,12 +134,29 @@ function RepoActions({ repo, meta, setMeta }) {
   // Terminal is always visible
 
   const doPull = async () => {
-    const r = await axios.post("/api/git/pull", { repoPath: meta.repoPath });
-    const up = Boolean(r.data?.status?.upToDate);
-    const behind = Number(r.data?.status?.after?.behind || 0);
-    setPullInfo({ at: new Date().toISOString(), upToDate: up, behind });
-    await refreshLog();
-    toast("Pulled latest ✅");
+    try {
+      setPulling(true);
+      const r = await axios.post("/api/git/pull", { repoPath: meta.repoPath });
+      const up = Boolean(r.data?.status?.upToDate);
+      const beforeBehind = Number(r.data?.status?.before?.behind || 0);
+      const afterBehind = Number(r.data?.status?.after?.behind || 0);
+      const behind = afterBehind;
+      setPullInfo({ at: new Date().toISOString(), upToDate: up, behind });
+      await refreshLog();
+      await refreshDiff();
+      try { await refreshStatus(); } catch {}
+      const pulled = Math.max(0, beforeBehind - afterBehind);
+      const msg = up
+        ? "Already up to date ✅"
+        : (pulled > 0 ? `Pulled ${pulled} commit${pulled===1?'':'s'} ✅` : "Pull complete ✅");
+      toast && toast(msg);
+    } catch (e) {
+      const msg = e?.response?.data?.error || e?.message || "Pull failed";
+      try { toast && toast(`Pull failed: ${msg}`); } catch {}
+      try { alert(`Pull failed: ${msg}`); } catch {}
+    } finally {
+      setPulling(false);
+    }
   };
 
   const doCheckout = async (b) => {
@@ -331,14 +349,16 @@ function RepoActions({ repo, meta, setMeta }) {
       <div className="col main-col">
         <div className="pane">
           <div className="actions" style={{marginBottom:8, display:'flex', flexWrap:'wrap', gap:8, alignItems:'center'}}>
-            {(() => { const disabled = pullInfo.upToDate === true; return (
+            {(() => { const disabled = pulling; return (
               <button
-                className="secondary"
+                className={"secondary"}
                 onClick={doPull}
                 disabled={disabled}
-                title={disabled ? 'Already up to date' : 'Fetch and pull latest'}
+                title={pulling ? 'Pulling…' : 'Fetch and pull latest'}
                 style={disabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
-              >git pull</button>
+              >
+                {pulling ? (<><span className="spinner" aria-hidden="true" /> Pulling…</>) : 'git pull'}
+              </button>
             ); })()}
             <span className="muted">
               {pullInfo.at

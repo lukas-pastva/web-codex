@@ -177,6 +177,20 @@
         animation: pop 200ms ease-out;
       }
 
+      /* Loading spinner used in action buttons */
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .spinner {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.25);
+        border-top-color: #fff;
+        display: inline-block;
+        vertical-align: -2px;
+        margin-right: 8px;
+        animation: spin 0.9s linear infinite;
+      }
+
     </style>
   </head>
   <body>
