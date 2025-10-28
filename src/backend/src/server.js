@@ -548,9 +548,33 @@ if (fs.existsSync(frontendDir)) {
 }
 
 const server = http.createServer(app);
+// Extend HTTP timeouts to avoid premature closes around upgrades/proxies
+try {
+  // Keep-alive > 10 minutes to be safe in some proxy setups
+  server.keepAliveTimeout = 650_000; // 10 min + buffer
+  // Headers timeout slightly larger than keepAliveTimeout
+  server.headersTimeout = 660_000;
+  // Disable request timeout (not relevant to WS but safe for long ops)
+  server.requestTimeout = 0;
+} catch {}
 
 // ---- WebSocket: /ws/terminal ----
 const wss = new WebSocketServer({ server, path: "/ws/terminal" });
+
+// Heartbeat to keep WS connections alive through proxies and detect dead peers
+const WS_HEARTBEAT_INTERVAL_MS = Number(process.env.WS_HEARTBEAT_INTERVAL_MS || 30_000);
+function heartbeat() { this.isAlive = true; }
+const hbInterval = setInterval(() => {
+  try {
+    wss.clients.forEach(ws => {
+      if (ws.isAlive === false) return ws.terminate();
+      ws.isAlive = false;
+      try { ws.ping(); } catch {}
+    });
+  } catch {}
+}, WS_HEARTBEAT_INTERVAL_MS);
+wss.on("close", () => { try { clearInterval(hbInterval); } catch {} });
+
 wss.on("connection", (ws, req) => {
   try {
     const url = new URL(req.url, "http://localhost");
@@ -569,6 +593,9 @@ wss.on("connection", (ws, req) => {
       cwd,
       env: { ...process.env, OPENAI_API_KEY }
     });
+    // Mark alive for heartbeat; browsers auto-respond to ping with pong
+    ws.isAlive = true;
+    ws.on("pong", heartbeat);
     p.onData(data => ws.readyState === 1 && ws.send(data));
     p.onExit(() => { try { ws.close(); } catch {} });
     ws.on("message", msg => { try { p.write(msg.toString()); } catch {} });
