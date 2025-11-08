@@ -93,6 +93,7 @@ function RepoActions({ repo, meta, setMeta }) {
   const [selectedDiffFile, setSelectedDiffFile] = useState("");
   const diffPaneRef = useRef(null);
   const [isDiffFullscreen, setIsDiffFullscreen] = useState(false);
+  const [manualDiffFullscreen, setManualDiffFullscreen] = useState(false);
   // Always auto-refresh patch every 5 seconds (mobile-friendly)
   const [pullInfo, setPullInfo] = useState({ at: null, upToDate: null, behind: 0 });
   const [pulling, setPulling] = useState(false);
@@ -103,6 +104,9 @@ function RepoActions({ repo, meta, setMeta }) {
   // Copy feedback state for the copy-hash button
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef(null);
+  // Haptics: vibrate on new changes when supported (mobile)
+  const prevChangedCountRef = useRef(0);
+  const lastVibeAtRef = useRef(0);
 
   const loadBranches = async () => {
     const r = await axios.get("/api/git/branches", { params: { repoPath: meta.repoPath }});
@@ -215,6 +219,30 @@ function RepoActions({ repo, meta, setMeta }) {
     return () => clearInterval(id);
   }, [meta.repoPath]);
 
+  // Mobile haptic: vibrate when changes appear/increase
+  useEffect(() => {
+    try {
+      const isTouch = (() => {
+        try { return (('ontouchstart' in window) || (navigator.maxTouchPoints > 0)); } catch { return false; }
+      })();
+      if (!isTouch) return; // only try on mobile/touch devices
+      const canVibrate = Boolean(navigator && typeof navigator.vibrate === 'function');
+      if (!canVibrate) return;
+      const prev = Number(prevChangedCountRef.current || 0);
+      const cur = Number((changedFiles || []).length || 0);
+      const now = Date.now();
+      // Vibrate when count increases, or when first change appears from 0
+      if ((cur > 0 && prev === 0) || (cur > prev)) {
+        // Rate limit to avoid spam during rapid refreshes
+        if (now - (lastVibeAtRef.current || 0) > 5000) {
+          try { navigator.vibrate([30, 40, 30]); } catch {}
+          lastVibeAtRef.current = now;
+        }
+      }
+      prevChangedCountRef.current = cur;
+    } catch {}
+  }, [changedFiles]);
+
   // Periodically refresh upstream status to enable/disable pull button
   useEffect(() => {
     if (!meta.repoPath) return;
@@ -301,19 +329,53 @@ function RepoActions({ repo, meta, setMeta }) {
       const node = diffPaneRef.current;
       if (!node) return;
       const cur = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
-      if (cur) {
-        if (document.exitFullscreen) await document.exitFullscreen();
-        else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
-        else if (document.mozCancelFullScreen) await document.mozCancelFullScreen();
-        else if (document.msExitFullscreen) await document.msExitFullscreen();
+      const canNative = Boolean(
+        node.requestFullscreen || node.webkitRequestFullscreen || node.mozRequestFullScreen || node.msRequestFullscreen
+      );
+      if (canNative) {
+        try {
+          if (cur) {
+            if (document.exitFullscreen) await document.exitFullscreen();
+            else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+            else if (document.mozCancelFullScreen) await document.mozCancelFullScreen();
+            else if (document.msExitFullscreen) await document.msExitFullscreen();
+          } else {
+            if (node.requestFullscreen) await node.requestFullscreen();
+            else if (node.webkitRequestFullscreen) await node.webkitRequestFullscreen();
+            else if (node.mozRequestFullScreen) await node.mozRequestFullScreen();
+            else if (node.msRequestFullscreen) await node.msRequestFullscreen();
+          }
+        } catch (e) {
+          // Native fullscreen failed (common on older mobile). Fallback to manual.
+          setManualDiffFullscreen(m => !m);
+        }
       } else {
-        if (node.requestFullscreen) await node.requestFullscreen();
-        else if (node.webkitRequestFullscreen) await node.webkitRequestFullscreen();
-        else if (node.mozRequestFullScreen) await node.mozRequestFullScreen();
-        else if (node.msRequestFullscreen) await node.msRequestFullscreen();
+        // No native support: use manual fullscreen overlay
+        setManualDiffFullscreen(m => !m);
       }
     } catch {}
   };
+
+  // Prevent background scroll on manual fullscreen
+  useEffect(() => {
+    try {
+      const el = document.documentElement; const body = document.body;
+      if (manualDiffFullscreen) {
+        if (el) el.style.overflow = 'hidden';
+        if (body) body.style.overflow = 'hidden';
+      } else {
+        if (el) el.style.overflow = '';
+        if (body) body.style.overflow = '';
+      }
+    } catch {}
+    return () => {
+      try {
+        const el = document.documentElement; const body = document.body;
+        if (el) el.style.overflow = '';
+        if (body) body.style.overflow = '';
+      } catch {}
+    };
+  }, [manualDiffFullscreen]);
 
   const copyHash = async (hash) => {
     try {
@@ -375,11 +437,8 @@ function RepoActions({ repo, meta, setMeta }) {
               </button>
             );})()}
           </div>
-        </div>
-
-        <FileTree repoPath={meta.repoPath} onOpen={async (p)=>{ const r=await axios.get("/api/git/file",{params:{repoPath:meta.repoPath,path:p}}); setOpenFile(p); setOpenFileContent(r.data.text||""); }} />
-        <div className="pane" style={{marginTop:16}}>
-          <div className="muted" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          {/* Last commit info moved into the same pane as git pull */}
+          <div className="muted" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8}}>
             <span>Last commit</span>
             <span></span>
           </div>
@@ -408,8 +467,16 @@ function RepoActions({ repo, meta, setMeta }) {
             )}
           </div>
         </div>
+
+        <FileTree repoPath={meta.repoPath} onOpen={async (p)=>{ const r=await axios.get("/api/git/file",{params:{repoPath:meta.repoPath,path:p}}); setOpenFile(p); setOpenFileContent(r.data.text||""); }} />
         {/* Patch preview moved here so that on desktop the terminal can occupy the left column alone */}
-        <div ref={diffPaneRef} className="pane" style={isDiffFullscreen ? { marginTop: 16, height: '100vh', display: 'flex', flexDirection: 'column' } : { marginTop: 16 }}>
+        <div
+          ref={diffPaneRef}
+          className="pane"
+          style={(isDiffFullscreen || manualDiffFullscreen)
+            ? { height: '100vh', display: 'flex', flexDirection: 'column', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, borderRadius: 0, margin: 0 }
+            : { marginTop: 16 }}
+        >
           <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span>Patch preview</span>
             <span style={{display:'inline-flex',alignItems:'center',gap:6}}>
@@ -417,10 +484,10 @@ function RepoActions({ repo, meta, setMeta }) {
                 <button className="secondary" onClick={() => setSelectedDiffFile("")} title="Show all changes">Show all</button>
               ) : null}
               <button
-                className={"secondary icon" + (isDiffFullscreen ? " active" : "")}
+                className={"secondary icon" + ((isDiffFullscreen || manualDiffFullscreen) ? " active" : "")}
                 onClick={toggleDiffFullscreen}
-                title={isDiffFullscreen ? 'Exit fullscreen' : 'Fullscreen patch'}
-              >{isDiffFullscreen ? '⤡' : '⤢'}</button>
+                title={(isDiffFullscreen || manualDiffFullscreen) ? 'Exit fullscreen' : 'Fullscreen patch'}
+              >{(isDiffFullscreen || manualDiffFullscreen) ? '⤡' : '⤢'}</button>
             </span>
           </div>
           {changedFiles.length > 0 && (
@@ -428,12 +495,6 @@ function RepoActions({ repo, meta, setMeta }) {
               <div>
                 <div style={{marginBottom:6}}>
                   {changedFiles.length} file{changedFiles.length!==1?'s':''} changed
-                  {selectedDiffFile ? (
-                    <>
-                      <span style={{marginLeft:8}}>• showing</span>
-                      <span className="badge gray" style={{marginLeft:6}}>{selectedDiffFile}</span>
-                    </>
-                  ) : null}
                 </div>
                 <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                   {(showAllChanged ? changedFiles : changedFiles.slice(0, 15)).map((f, idx) => {
