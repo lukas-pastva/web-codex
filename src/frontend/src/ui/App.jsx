@@ -85,7 +85,6 @@ function RepoActions({ repo, meta, setMeta }) {
   const [current, setCurrent] = useState("");
   const [log, setLog] = useState([]);
   const [patch, setPatch] = useState("");
-  const [message, setMessage] = useState("codex-" + new Date().toISOString());
   const [showPretty, setShowPretty] = useState(false);
   const [openFile, setOpenFile] = useState(null);
   const [openFileContent, setOpenFileContent] = useState("");
@@ -253,6 +252,7 @@ function RepoActions({ repo, meta, setMeta }) {
   const doApplyCommitPush = async () => {
     try {
       setPushing(true);
+      const message = "codex-" + new Date().toISOString();
       await axios.post("/api/git/commitPush", { repoPath: meta.repoPath, message });
       await refreshLog();
       await refreshDiff();
@@ -419,18 +419,19 @@ function RepoActions({ repo, meta, setMeta }) {
                 title={pulling ? 'Pulling…' : 'Fetch and pull latest'}
                 style={disabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
               >
-                {pulling ? (<><span className="spinner" aria-hidden="true" /> Pulling…</>) : 'git pull'}
+                {pulling
+                  ? (<><span className="spinner" aria-hidden="true" /> Pulling…</>)
+                  : (pullInfo.upToDate ? 'Up to date' : 'git pull')}
               </button>
             ); })()}
             <span className="muted">
               {pullInfo.at
-                ? `Last pull: ${new Date(pullInfo.at).toLocaleTimeString()} • ${pullInfo.upToDate ? 'up to date' : (pullInfo.behind > 0 ? `behind ${pullInfo.behind}` : 'updated')}`
-                : (pullInfo.upToDate === null ? 'Never pulled' : (pullInfo.upToDate ? 'Up to date' : 'Behind'))}
+                ? `Last pull: ${new Date(pullInfo.at).toLocaleTimeString()}`
+                : (pullInfo.upToDate === null ? 'Never pulled' : (pullInfo.behind > 0 ? `Behind ${pullInfo.behind}` : ''))}
             </span>
             <select id="branch-select" value={current} onChange={e => doCheckout(e.target.value)}>
               {branches.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
-            <input placeholder="commit message" value={message} onChange={e=>setMessage(e.target.value)} style={{minWidth:220}}/>
             {(() => { const canPush = Boolean((patch||"").trim()); return (
               <button onClick={doApplyCommitPush} disabled={!canPush || pushing} style={(!canPush || pushing) ? {opacity:0.6, cursor:'not-allowed'} : {}}>
                 {pushing ? '⏳ Pushing…' : 'Apply & Push'}
@@ -480,9 +481,6 @@ function RepoActions({ repo, meta, setMeta }) {
           <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span>Patch preview</span>
             <span style={{display:'inline-flex',alignItems:'center',gap:6}}>
-              {selectedDiffFile ? (
-                <button className="secondary" onClick={() => setSelectedDiffFile("")} title="Show all changes">Show all</button>
-              ) : null}
               <button
                 className={"secondary icon" + ((isDiffFullscreen || manualDiffFullscreen) ? " active" : "")}
                 onClick={toggleDiffFullscreen}

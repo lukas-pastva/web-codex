@@ -188,7 +188,6 @@ export default function CodexTerminal({ repoPath }) {
     >
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
         <div className="muted" style={{display:'flex', alignItems:'center', gap: 12}}>
-          <span>Codex Chat</span>
           <span style={{display:'inline-flex', alignItems:'center'}}>
             <button
               className="secondary"
