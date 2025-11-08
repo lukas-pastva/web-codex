@@ -226,3 +226,5 @@ The deployment already includes HTTP probes for both endpoints.
 ## Auto-refresh diff
 In the repo view, toggle **Auto refresh** to periodically update the working‑tree diff and status.
 You can set the refresh interval (default 5s; minimum 2s).
+
+psw 2025 :-)
