@@ -166,7 +166,14 @@ app.get("/api/providers", async (req, res) => {
           const url = `${GL_BASE_URL}/api/v4/groups/${encoded}/projects?per_page=100`;
           dlog("GET", url);
           const projects = (await axios.get(url, { headers: glHeaders })).data;
-          out.gitlab[grp] = projects.map(p => ({ id: p.id, name: p.path, full_name: p.path_with_namespace, default_branch: p.default_branch, clone_url: p.http_url_to_repo, ssh_url: p.ssh_url_to_repo, web_url: p.web_url, private: !p.public }));
+          // Filter out repositories scheduled for deletion
+          const keep = (projects || []).filter(p => {
+            // GitLab may expose one of these when scheduled for deletion
+            const markedAt = p.marked_for_deletion_at || p.marked_for_deletion_on;
+            const pending = p.pending_delete || p.pending_deletion || p.marked_for_deletion;
+            return !(markedAt || pending);
+          });
+          out.gitlab[grp] = keep.map(p => ({ id: p.id, name: p.path, full_name: p.path_with_namespace, default_branch: p.default_branch, clone_url: p.http_url_to_repo, ssh_url: p.ssh_url_to_repo, web_url: p.web_url, private: !p.public }));
         } catch (e) {
           console.error("providers: GitLab group projects failed:", formatErr(e));
           out._errors.push({ provider: "gitlab", scope: "group", group: grp, error: formatErr(e) });
@@ -189,6 +196,30 @@ app.post("/api/git/clone", async (req, res) => {
   try {
     const { provider, owner, name, clone_url } = req.body;
     dlog("clone request:", { provider, owner, name, clone_url: redact(clone_url) });
+    // Safety: block GitLab projects scheduled for deletion
+    if (String(provider).toLowerCase() === 'gitlab' && GL_TOKEN && clone_url) {
+      try {
+        const u = new URL(clone_url);
+        const hostMatches = u.origin.replace(/\/$/, '') === GL_BASE_URL;
+        if (hostMatches) {
+          let p = u.pathname.replace(/^\//, '');
+          if (p.endsWith('.git')) p = p.slice(0, -4);
+          const projId = encodeURIComponent(p);
+          const checkUrl = `${GL_BASE_URL}/api/v4/projects/${projId}`;
+          dlog('GET', checkUrl, '(pre-clone check)');
+          const r = await axios.get(checkUrl, { headers: { 'Private-Token': GL_TOKEN } });
+          const pr = r.data || {};
+          const markedAt = pr.marked_for_deletion_at || pr.marked_for_deletion_on;
+          const pending = pr.pending_delete || pr.pending_deletion || pr.marked_for_deletion;
+          if (markedAt || pending) {
+            return res.status(400).json({ error: 'GitLab project is scheduled for deletion; loading is disabled' });
+          }
+        }
+      } catch (e) {
+        // Do not block on check errors; continue to clone unless clearly flagged
+        dlog('gitlab pre-clone check skipped:', formatErr(e));
+      }
+    }
     const repoPath = await ensureClone(provider, owner, name, clone_url);
     res.json({ ok: true, repoPath });
   } catch (err) {
@@ -322,6 +353,46 @@ app.get("/api/git/diff", async (req, res) => {
     const diff = parts.join("\n\n");
     res.set("Cache-Control", "no-store");
     res.json({ ok: true, diff });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Git three-way for a file (base/ours/theirs) ----
+app.get("/api/git/threeway", async (req, res) => {
+  try {
+    const repoPath = req.query.repoPath;
+    const filePath = req.query.path;
+    if (!repoPath || !filePath) return res.status(400).json({ error: "repoPath and path are required" });
+    const cwd = repoPath;
+    try { await simpleGit(cwd).fetch(); } catch {}
+    const sh = (args) => spawnSync("git", args, { cwd, env: process.env, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+    const out = (p) => (p && typeof p.stdout === 'string') ? p.stdout.trim() : '';
+    let upstream = out(sh(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]));
+    if (!upstream) upstream = out(sh(["rev-parse", "--abbrev-ref", "origin/HEAD"]));
+    if (!upstream) return res.status(400).json({ error: "No upstream configured for three-way comparison" });
+    const base = out(sh(["merge-base", "HEAD", upstream]));
+    if (!base) return res.status(400).json({ error: "Failed to compute merge-base" });
+
+    // Read file contents at base, ours (HEAD), and theirs (upstream)
+    const readAt = (ref, p) => {
+      try {
+        const r = sh(["show", `${ref}:${p}`]);
+        if (r.status !== 0) return null;
+        return out(r);
+      } catch { return null; }
+    };
+    const data = {
+      ok: true,
+      upstream,
+      baseRef: base,
+      oursRef: "HEAD",
+      theirsRef: upstream,
+      base: readAt(base, filePath),
+      ours: readAt("HEAD", filePath),
+      theirs: readAt(upstream, filePath)
+    };
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

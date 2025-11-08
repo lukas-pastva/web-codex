@@ -69,10 +69,13 @@ export default function CodexTerminal({ repoPath }) {
   };
 
   useEffect(() => {
-    // Smaller default font on mobile; slightly smaller in general
+    // Smaller default font on mobile phones; tablet a bit larger
     const baseFontSize = (() => {
       try {
-        return (window.matchMedia && window.matchMedia('(max-width: 820px)').matches) ? 12 : 13;
+        const mq = (q) => (window.matchMedia ? window.matchMedia(q).matches : false);
+        const isPhone = mq('(max-width: 480px)');
+        const isTablet = !isPhone && mq('(max-width: 820px)');
+        return isPhone ? 11 : (isTablet ? 12 : 13);
       } catch { return 13; }
     })();
     const term = new Terminal({ convertEol: true, cursorBlink: true, fontSize: baseFontSize });
