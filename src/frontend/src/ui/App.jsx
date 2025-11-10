@@ -85,14 +85,19 @@ function RepoActions({ repo, meta, setMeta }) {
   const [current, setCurrent] = useState("");
   const [log, setLog] = useState([]);
   const [patch, setPatch] = useState("");
-  const [message, setMessage] = useState("codex-" + new Date().toISOString());
   const [showPretty, setShowPretty] = useState(false);
+  const [prettyMode, setPrettyMode] = useState('unified'); // unified | side-by-side
+  const [threeWayActive, setThreeWayActive] = useState(false);
+  const [threeWayData, setThreeWayData] = useState(null);
+  const [threeWayLoading, setThreeWayLoading] = useState(false);
+  const [threeWayError, setThreeWayError] = useState('');
   const [openFile, setOpenFile] = useState(null);
   const [openFileContent, setOpenFileContent] = useState("");
   // Patch preview interactions
   const [selectedDiffFile, setSelectedDiffFile] = useState("");
   const diffPaneRef = useRef(null);
   const [isDiffFullscreen, setIsDiffFullscreen] = useState(false);
+  const [manualDiffFullscreen, setManualDiffFullscreen] = useState(false);
   // Always auto-refresh patch every 5 seconds (mobile-friendly)
   const [pullInfo, setPullInfo] = useState({ at: null, upToDate: null, behind: 0 });
   const [pulling, setPulling] = useState(false);
@@ -103,6 +108,9 @@ function RepoActions({ repo, meta, setMeta }) {
   // Copy feedback state for the copy-hash button
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef(null);
+  // Haptics: vibrate on new changes when supported (mobile)
+  const prevChangedCountRef = useRef(0);
+  const lastVibeAtRef = useRef(0);
 
   const loadBranches = async () => {
     const r = await axios.get("/api/git/branches", { params: { repoPath: meta.repoPath }});
@@ -215,6 +223,30 @@ function RepoActions({ repo, meta, setMeta }) {
     return () => clearInterval(id);
   }, [meta.repoPath]);
 
+  // Mobile haptic: vibrate when changes appear/increase
+  useEffect(() => {
+    try {
+      const isTouch = (() => {
+        try { return (('ontouchstart' in window) || (navigator.maxTouchPoints > 0)); } catch { return false; }
+      })();
+      if (!isTouch) return; // only try on mobile/touch devices
+      const canVibrate = Boolean(navigator && typeof navigator.vibrate === 'function');
+      if (!canVibrate) return;
+      const prev = Number(prevChangedCountRef.current || 0);
+      const cur = Number((changedFiles || []).length || 0);
+      const now = Date.now();
+      // Vibrate when count increases, or when first change appears from 0
+      if ((cur > 0 && prev === 0) || (cur > prev)) {
+        // Rate limit to avoid spam during rapid refreshes
+        if (now - (lastVibeAtRef.current || 0) > 5000) {
+          try { navigator.vibrate([30, 40, 30]); } catch {}
+          lastVibeAtRef.current = now;
+        }
+      }
+      prevChangedCountRef.current = cur;
+    } catch {}
+  }, [changedFiles]);
+
   // Periodically refresh upstream status to enable/disable pull button
   useEffect(() => {
     if (!meta.repoPath) return;
@@ -225,6 +257,7 @@ function RepoActions({ repo, meta, setMeta }) {
   const doApplyCommitPush = async () => {
     try {
       setPushing(true);
+      const message = "codex-" + new Date().toISOString();
       await axios.post("/api/git/commitPush", { repoPath: meta.repoPath, message });
       await refreshLog();
       await refreshDiff();
@@ -275,6 +308,21 @@ function RepoActions({ repo, meta, setMeta }) {
     return extractFileDiff(patch || "", selectedDiffFile) || "";
   }, [patch, selectedDiffFile]);
 
+  // Load three-way contents when activated and a file is selected
+  useEffect(() => {
+    const run = async () => {
+      if (!threeWayActive || !meta.repoPath || !selectedDiffFile) return;
+      setThreeWayLoading(true); setThreeWayError('');
+      try {
+        const r = await axios.get('/api/git/threeway', { params: { repoPath: meta.repoPath, path: selectedDiffFile } });
+        setThreeWayData(r.data);
+      } catch (e) {
+        setThreeWayError(e?.response?.data?.error || e?.message || 'Failed to load three-way');
+      } finally { setThreeWayLoading(false); }
+    };
+    run().catch(()=>{});
+  }, [threeWayActive, meta.repoPath, selectedDiffFile]);
+
   // Fullscreen handling for diff pane
   useEffect(() => {
     const onFsChange = () => {
@@ -301,19 +349,53 @@ function RepoActions({ repo, meta, setMeta }) {
       const node = diffPaneRef.current;
       if (!node) return;
       const cur = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
-      if (cur) {
-        if (document.exitFullscreen) await document.exitFullscreen();
-        else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
-        else if (document.mozCancelFullScreen) await document.mozCancelFullScreen();
-        else if (document.msExitFullscreen) await document.msExitFullscreen();
+      const canNative = Boolean(
+        node.requestFullscreen || node.webkitRequestFullscreen || node.mozRequestFullScreen || node.msRequestFullscreen
+      );
+      if (canNative) {
+        try {
+          if (cur) {
+            if (document.exitFullscreen) await document.exitFullscreen();
+            else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+            else if (document.mozCancelFullScreen) await document.mozCancelFullScreen();
+            else if (document.msExitFullscreen) await document.msExitFullscreen();
+          } else {
+            if (node.requestFullscreen) await node.requestFullscreen();
+            else if (node.webkitRequestFullscreen) await node.webkitRequestFullscreen();
+            else if (node.mozRequestFullScreen) await node.mozRequestFullScreen();
+            else if (node.msRequestFullscreen) await node.msRequestFullscreen();
+          }
+        } catch (e) {
+          // Native fullscreen failed (common on older mobile). Fallback to manual.
+          setManualDiffFullscreen(m => !m);
+        }
       } else {
-        if (node.requestFullscreen) await node.requestFullscreen();
-        else if (node.webkitRequestFullscreen) await node.webkitRequestFullscreen();
-        else if (node.mozRequestFullScreen) await node.mozRequestFullScreen();
-        else if (node.msRequestFullscreen) await node.msRequestFullscreen();
+        // No native support: use manual fullscreen overlay
+        setManualDiffFullscreen(m => !m);
       }
     } catch {}
   };
+
+  // Prevent background scroll on manual fullscreen
+  useEffect(() => {
+    try {
+      const el = document.documentElement; const body = document.body;
+      if (manualDiffFullscreen) {
+        if (el) el.style.overflow = 'hidden';
+        if (body) body.style.overflow = 'hidden';
+      } else {
+        if (el) el.style.overflow = '';
+        if (body) body.style.overflow = '';
+      }
+    } catch {}
+    return () => {
+      try {
+        const el = document.documentElement; const body = document.body;
+        if (el) el.style.overflow = '';
+        if (body) body.style.overflow = '';
+      } catch {}
+    };
+  }, [manualDiffFullscreen]);
 
   const copyHash = async (hash) => {
     try {
@@ -357,29 +439,27 @@ function RepoActions({ repo, meta, setMeta }) {
                 title={pulling ? 'Pulling…' : 'Fetch and pull latest'}
                 style={disabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
               >
-                {pulling ? (<><span className="spinner" aria-hidden="true" /> Pulling…</>) : 'git pull'}
+                {pulling
+                  ? (<><span className="spinner" aria-hidden="true" /> Pulling…</>)
+                  : (pullInfo.upToDate ? 'Up to date' : 'git pull')}
               </button>
             ); })()}
             <span className="muted">
               {pullInfo.at
-                ? `Last pull: ${new Date(pullInfo.at).toLocaleTimeString()} • ${pullInfo.upToDate ? 'up to date' : (pullInfo.behind > 0 ? `behind ${pullInfo.behind}` : 'updated')}`
-                : (pullInfo.upToDate === null ? 'Never pulled' : (pullInfo.upToDate ? 'Up to date' : 'Behind'))}
+                ? `Last pull: ${new Date(pullInfo.at).toLocaleTimeString()}`
+                : (pullInfo.upToDate === null ? 'Never pulled' : (pullInfo.behind > 0 ? `Behind ${pullInfo.behind}` : ''))}
             </span>
             <select id="branch-select" value={current} onChange={e => doCheckout(e.target.value)}>
               {branches.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
-            <input placeholder="commit message" value={message} onChange={e=>setMessage(e.target.value)} style={{minWidth:220}}/>
             {(() => { const canPush = Boolean((patch||"").trim()); return (
               <button onClick={doApplyCommitPush} disabled={!canPush || pushing} style={(!canPush || pushing) ? {opacity:0.6, cursor:'not-allowed'} : {}}>
                 {pushing ? '⏳ Pushing…' : 'Apply & Push'}
               </button>
             );})()}
           </div>
-        </div>
-
-        <FileTree repoPath={meta.repoPath} onOpen={async (p)=>{ const r=await axios.get("/api/git/file",{params:{repoPath:meta.repoPath,path:p}}); setOpenFile(p); setOpenFileContent(r.data.text||""); }} />
-        <div className="pane" style={{marginTop:16}}>
-          <div className="muted" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          {/* Last commit info moved into the same pane as git pull */}
+          <div className="muted" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8}}>
             <span>Last commit</span>
             <span></span>
           </div>
@@ -408,33 +488,57 @@ function RepoActions({ repo, meta, setMeta }) {
             )}
           </div>
         </div>
+
+        <FileTree repoPath={meta.repoPath} onOpen={async (p)=>{ const r=await axios.get("/api/git/file",{params:{repoPath:meta.repoPath,path:p}}); setOpenFile(p); setOpenFileContent(r.data.text||""); }} />
         {/* Patch preview moved here so that on desktop the terminal can occupy the left column alone */}
-        <div ref={diffPaneRef} className="pane" style={isDiffFullscreen ? { marginTop: 16, height: '100vh', display: 'flex', flexDirection: 'column' } : { marginTop: 16 }}>
-          <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span>Patch preview</span>
-            <span style={{display:'inline-flex',alignItems:'center',gap:6}}>
-              {selectedDiffFile ? (
-                <button className="secondary" onClick={() => setSelectedDiffFile("")} title="Show all changes">Show all</button>
-              ) : null}
+        <div
+          ref={diffPaneRef}
+          className="pane"
+          style={(isDiffFullscreen || manualDiffFullscreen)
+            ? { height: '100vh', display: 'flex', flexDirection: 'column', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, borderRadius: 0, margin: 0 }
+            : { marginTop: 16 }}
+        >
+          <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+            <span style={{display:'inline-flex',alignItems:'center',gap:8}}>
+              <span>Patch preview</span>
+              {changedFiles.length > 0 && (
+                <span className="tag" title="Changed files count">{changedFiles.length} changed</span>
+              )}
+            </span>
+            <span style={{display:'inline-flex',alignItems:'center',gap:6,flexWrap:'wrap',justifyContent:'flex-end'}}>
+              <span className="muted" style={{marginRight:4}}>View:</span>
               <button
-                className={"secondary icon" + (isDiffFullscreen ? " active" : "")}
+                className={"secondary" + (!showPretty && !threeWayActive ? " active" : "")}
+                onClick={() => { setThreeWayActive(false); setShowPretty(false); }}
+                title="Raw unified diff"
+              >Raw</button>
+              <button
+                className={"secondary" + (showPretty && prettyMode==='unified' && !threeWayActive ? " active" : "")}
+                onClick={() => { setThreeWayActive(false); setShowPretty(true); setPrettyMode('unified'); }}
+                title="Pretty diff (unified)"
+              >Pretty</button>
+              <button
+                className={"secondary" + (showPretty && prettyMode==='side-by-side' && !threeWayActive ? " active" : "")}
+                onClick={() => { setThreeWayActive(false); setShowPretty(true); setPrettyMode('side-by-side'); }}
+                title="Pretty diff (side-by-side)"
+              >Side-by-side</button>
+              <button
+                className={"secondary" + (threeWayActive ? " active" : "")}
+                onClick={() => setThreeWayActive(v => !v)}
+                disabled={!selectedDiffFile}
+                title={selectedDiffFile ? 'Three-way (base / HEAD / upstream)' : 'Select a file to enable three-way'}
+                style={!selectedDiffFile ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
+              >3‑way</button>
+              <button
+                className={"secondary icon" + ((isDiffFullscreen || manualDiffFullscreen) ? " active" : "")}
                 onClick={toggleDiffFullscreen}
-                title={isDiffFullscreen ? 'Exit fullscreen' : 'Fullscreen patch'}
-              >{isDiffFullscreen ? '⤡' : '⤢'}</button>
+                title={(isDiffFullscreen || manualDiffFullscreen) ? 'Exit fullscreen' : 'Fullscreen patch'}
+              >{(isDiffFullscreen || manualDiffFullscreen) ? '⤡' : '⤢'}</button>
             </span>
           </div>
           {changedFiles.length > 0 && (
             <div className="muted" style={{margin:"6px 0 8px 0"}}>
               <div>
-                <div style={{marginBottom:6}}>
-                  {changedFiles.length} file{changedFiles.length!==1?'s':''} changed
-                  {selectedDiffFile ? (
-                    <>
-                      <span style={{marginLeft:8}}>• showing</span>
-                      <span className="badge gray" style={{marginLeft:6}}>{selectedDiffFile}</span>
-                    </>
-                  ) : null}
-                </div>
                 <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                   {(showAllChanged ? changedFiles : changedFiles.slice(0, 15)).map((f, idx) => {
                     const active = selectedDiffFile === f.path;
@@ -461,11 +565,41 @@ function RepoActions({ repo, meta, setMeta }) {
               </div>
             </div>
           )}
-          {(displayedPatch || '').trim() ? (
+          {(threeWayActive && selectedDiffFile) ? (
+            <div style={isDiffFullscreen ? { flex: 1, display:'flex', flexDirection:'column', minHeight:0 } : {}}>
+              {threeWayLoading ? (
+                <div className="muted">Loading 3‑way…</div>
+              ) : threeWayError ? (
+                <div className="muted">{threeWayError}</div>
+              ) : (threeWayData ? (
+                <div>
+                  <div className="muted" style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+                    <span>Base: {threeWayData.baseRef?.slice?.(0,8) || 'n/a'}</span>
+                    <span>Ours: {threeWayData.oursRef || 'HEAD'}</span>
+                    <span>Theirs: {threeWayData.theirsRef || ''}</span>
+                  </div>
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, alignItems:'stretch'}}>
+                    <div>
+                      <div className="muted" style={{marginBottom:4}}>Base</div>
+                      <code className="diff" style={{maxHeight:isDiffFullscreen? 'none':'50vh'}}>{threeWayData.base || ''}</code>
+                    </div>
+                    <div>
+                      <div className="muted" style={{marginBottom:4}}>Ours (HEAD)</div>
+                      <code className="diff" style={{maxHeight:isDiffFullscreen? 'none':'50vh'}}>{threeWayData.ours || ''}</code>
+                    </div>
+                    <div>
+                      <div className="muted" style={{marginBottom:4}}>Theirs (upstream)</div>
+                      <code className="diff" style={{maxHeight:isDiffFullscreen? 'none':'50vh'}}>{threeWayData.theirs || ''}</code>
+                    </div>
+                  </div>
+                </div>
+              ) : null)}
+            </div>
+          ) : ((displayedPatch || '').trim() ? (
             showPretty
-              ? <DiffPretty diff={displayedPatch} />
+              ? <DiffPretty diff={displayedPatch} mode={prettyMode === 'side-by-side' ? 'side-by-side' : 'unified'} />
               : <code className="diff" style={isDiffFullscreen ? { flex: 1, minHeight: 0, maxHeight: 'none' } : {}}>{displayedPatch}</code>
-          ) : null}
+          ) : null)}
         </div>
       </div>
 
@@ -632,6 +766,7 @@ export default function App() {
   }, [providers, current]);
 
   const openRepo = async (repo, providerOverride, keyOverride) => {
+    // Optimistically set; revert if clone fails
     setCurrentRepo(repo);
     // Derive provider & owner from full_name/path
     const [providerAuto, keyAuto] = (current || '').split(":");
@@ -640,8 +775,15 @@ export default function App() {
     const owner = (repo.full_name || repo.path_with_namespace || "").split("/")[0];
     const name = repo.name;
     const clone_url = repo.clone_url || repo.http_url_to_repo;
-    const r = await axios.post("/api/git/clone", { provider, owner, name, clone_url });
-    setMeta({ repoPath: r.data.repoPath, provider, owner, name, clone_url });
+    try {
+      const r = await axios.post("/api/git/clone", { provider, owner, name, clone_url });
+      setMeta({ repoPath: r.data.repoPath, provider, owner, name, clone_url });
+    } catch (e) {
+      const msg = e?.response?.data?.error || e?.message || 'Failed to open repo';
+      try { alert(msg); } catch {}
+      setCurrentRepo(null);
+      setMeta({ repoPath: '' });
+    }
   };
 
   // Keep URL in sync with state for bookmarking

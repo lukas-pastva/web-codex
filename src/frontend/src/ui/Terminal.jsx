@@ -10,6 +10,7 @@ export default function CodexTerminal({ repoPath }) {
   const wsRef = useRef(null);
   const fitRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [manualFullscreen, setManualFullscreen] = useState(false);
 
   const copySelectionUnwrapped = async () => {
     try {
@@ -68,10 +69,13 @@ export default function CodexTerminal({ repoPath }) {
   };
 
   useEffect(() => {
-    // Smaller default font on mobile; slightly smaller in general
+    // Smaller default font on mobile phones; tablet a bit larger
     const baseFontSize = (() => {
       try {
-        return (window.matchMedia && window.matchMedia('(max-width: 820px)').matches) ? 12 : 13;
+        const mq = (q) => (window.matchMedia ? window.matchMedia(q).matches : false);
+        const isPhone = mq('(max-width: 480px)');
+        const isTablet = !isPhone && mq('(max-width: 820px)');
+        return isPhone ? 11 : (isTablet ? 12 : 13);
       } catch { return 13; }
     })();
     const term = new Terminal({ convertEol: true, cursorBlink: true, fontSize: baseFontSize });
@@ -125,26 +129,68 @@ export default function CodexTerminal({ repoPath }) {
       const node = containerRef.current;
       if (!node) return;
       const cur = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
-      if (cur) {
-        if (document.exitFullscreen) await document.exitFullscreen();
-        else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
-        else if (document.mozCancelFullScreen) await document.mozCancelFullScreen();
-        else if (document.msExitFullscreen) await document.msExitFullscreen();
+      const canNative = Boolean(
+        node.requestFullscreen || node.webkitRequestFullscreen || node.mozRequestFullScreen || node.msRequestFullscreen
+      );
+      if (canNative) {
+        try {
+          if (cur) {
+            if (document.exitFullscreen) await document.exitFullscreen();
+            else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+            else if (document.mozCancelFullScreen) await document.mozCancelFullScreen();
+            else if (document.msExitFullscreen) await document.msExitFullscreen();
+          } else {
+            if (node.requestFullscreen) await node.requestFullscreen();
+            else if (node.webkitRequestFullscreen) await node.webkitRequestFullscreen();
+            else if (node.mozRequestFullScreen) await node.mozRequestFullScreen();
+            else if (node.msRequestFullscreen) await node.msRequestFullscreen();
+          }
+        } catch (e) {
+          // Native fullscreen failed (common on older mobile). Fallback to manual.
+          setManualFullscreen(m => !m);
+        }
       } else {
-        if (node.requestFullscreen) await node.requestFullscreen();
-        else if (node.webkitRequestFullscreen) await node.webkitRequestFullscreen();
-        else if (node.mozRequestFullScreen) await node.mozRequestFullScreen();
-        else if (node.msRequestFullscreen) await node.msRequestFullscreen();
+        // No native support: use manual fullscreen overlay
+        setManualFullscreen(m => !m);
       }
       setTimeout(() => { try { fitRef.current && fitRef.current.fit(); } catch {} }, 100);
     } catch {}
   };
 
+  // Prevent background scroll when using manual fullscreen
+  useEffect(() => {
+    try {
+      const el = document.documentElement;
+      const body = document.body;
+      if (manualFullscreen) {
+        if (el) el.style.overflow = 'hidden';
+        if (body) body.style.overflow = 'hidden';
+      } else {
+        if (el) el.style.overflow = '';
+        if (body) body.style.overflow = '';
+      }
+    } catch {}
+    return () => {
+      try {
+        const el = document.documentElement; const body = document.body;
+        if (el) el.style.overflow = '';
+        if (body) body.style.overflow = '';
+      } catch {}
+    };
+  }, [manualFullscreen]);
+
+  const fullscreenActive = isFullscreen || manualFullscreen;
+
   return (
-    <div ref={containerRef} className="pane" style={isFullscreen ? { height: '100vh', display: 'flex', flexDirection: 'column' } : {}}>
+    <div
+      ref={containerRef}
+      className="pane"
+      style={fullscreenActive
+        ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, height: '100vh', display: 'flex', flexDirection: 'column', zIndex: 9999, borderRadius: 0, margin: 0 }
+        : {}}
+    >
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
         <div className="muted" style={{display:'flex', alignItems:'center', gap: 12}}>
-          <span>Codex Chat</span>
           <span style={{display:'inline-flex', alignItems:'center'}}>
             <button
               className="secondary"
@@ -182,13 +228,13 @@ export default function CodexTerminal({ repoPath }) {
         </div>
         <div>
           <button
-            className={"secondary icon" + (isFullscreen ? " active" : "")}
+            className={"secondary icon" + (fullscreenActive ? " active" : "")}
             onClick={toggleFullscreen}
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen terminal'}
-          >{isFullscreen ? '⤡' : '⤢'}</button>
+            title={fullscreenActive ? 'Exit fullscreen' : 'Fullscreen terminal'}
+          >{fullscreenActive ? '⤡' : '⤢'}</button>
         </div>
       </div>
-      <div ref={ref} className="term" style={isFullscreen ? { flex: 1, minHeight: 0, height: 'auto' } : {}} />
+      <div ref={ref} className="term" style={fullscreenActive ? { flex: 1, minHeight: 0, height: 'auto' } : {}} />
       {showPasteModal && (
         <div style={{position:'fixed',left:0,top:0,right:0,bottom:0,background:'rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
           <div style={{background:'#1e1e1e',border:'1px solid #444',borderRadius:6,width:'min(800px, 95vw)',maxWidth:'95vw',padding:12,boxShadow:'0 6px 24px rgba(0,0,0,0.5)'}}>
