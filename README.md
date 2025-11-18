@@ -228,3 +228,4 @@ In the repo view, toggle **Auto refresh** to periodically update the working‑t
 You can set the refresh interval (default 5s; minimum 2s).
 
 psw 2025
+bump
