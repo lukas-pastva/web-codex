@@ -53,7 +53,7 @@ function GroupTabs({ providers, current, setCurrent }) {
   );
 }
 
-function Breadcrumbs({ current, onHome, onGroup }) {
+function Breadcrumbs({ current, repo, onHome, onGroup }) {
   const [providerRaw, key] = (current || "").split(":");
   const provider = providerRaw || "";
   const providerLabel = provider === "github" ? "GitHub" : (provider === "gitlab" ? "GitLab" : provider);
@@ -61,6 +61,16 @@ function Breadcrumbs({ current, onHome, onGroup }) {
   crumbs.push({ label: "Home", type: "root", onClick: onHome, key: "home" });
   if (provider) crumbs.push({ label: providerLabel || provider, type: "chip", onClick: () => onGroup?.(provider, key), key: "provider" });
   if (key) crumbs.push({ label: key, type: "chip", onClick: () => onGroup?.(provider, key), key: "group" });
+  // Include repo name as the current crumb when a repo is open
+  if (repo) {
+    const repoLabel = (
+      repo.name ||
+      (repo.full_name ? String(repo.full_name).split('/').pop() : '') ||
+      (repo.path_with_namespace ? String(repo.path_with_namespace).split('/').pop() : '') ||
+      ''
+    );
+    if (repoLabel) crumbs.push({ label: repoLabel, type: "current", key: "repo" });
+  }
   return (
     <nav className="breadcrumbs" aria-label="Breadcrumb">
       {crumbs.map((c, idx) => (
@@ -956,6 +966,7 @@ export default function App() {
         <div style={{flex:1, minWidth:0}}>
           <Breadcrumbs
             current={current}
+            repo={currentRepo}
             onHome={handleGoHome}
             onGroup={handleGoGroup}
           />
