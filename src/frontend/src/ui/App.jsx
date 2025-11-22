@@ -314,7 +314,12 @@ function RepoActions({ repo, meta, setMeta }) {
     try {
       setPushing(true);
       const message = "codex-" + new Date().toISOString();
-      await axios.post("/api/git/commitPush", { repoPath: meta.repoPath, message });
+      const r = await axios.post("/api/git/commitPush", { repoPath: meta.repoPath, message });
+      // Copy the new commit hash to clipboard as part of push
+      const newHash = r?.data?.commit?.commit || "";
+      if (newHash) {
+        try { await copyHash(newHash); } catch {}
+      }
       await refreshLog();
       await refreshDiff();
       toast && toast("Pushed ✅");
@@ -530,33 +535,12 @@ function RepoActions({ repo, meta, setMeta }) {
               </button>
             );})()}
           </div>
-          {/* Last commit info moved into the same pane as git pull */}
-          <div className="muted" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8}}>
-            <span>Last commit</span>
-            <span></span>
-          </div>
-          <div className="repo">
-            {log && log.length ? (
-              <>
-                <div className="muted">
-                  <a href={log[0].web_url || '#'} target="_blank" rel="noreferrer" title="Open in provider">
-                    {log[0].hash.slice(0, 8)}
-                  </a>
-                  {` · ${new Date(log[0].date).toLocaleString()}`}
-                </div>
-                <div style={{display:'flex', gap:8, alignItems:'center'}}>
-                  <button
-                    className={"secondary" + (copied ? " copied" : "")}
-                    onClick={() => copyHash(log[0].hash)}
-                    title="Copy full commit hash"
-                    aria-live="polite"
-                  >
-                    {copied ? '✓ Copied' : 'copy hash'}
-                  </button>
-                </div>
-              </>
+          {/* Last commit: only show a clickable "Last commit" text linking to provider, no extra data */}
+          <div className="muted" style={{marginTop:8}}>
+            {(log && log.length && log[0].web_url) ? (
+              <a href={log[0].web_url} target="_blank" rel="noreferrer" title="Open last commit in provider">Last commit</a>
             ) : (
-              <div className="muted">No commits</div>
+              <span>Last commit</span>
             )}
           </div>
         </div>
