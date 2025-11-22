@@ -42,7 +42,7 @@ function Breadcrumbs({ current, currentRepo, onHome, onGroup }) {
   const provider = providerRaw || "";
   const providerLabel = provider === "github" ? "GitHub" : (provider === "gitlab" ? "GitLab" : provider);
   const crumbs = [];
-  crumbs.push({ label: "web-codex", type: "root", onClick: onHome, key: "home" });
+  crumbs.push({ label: "Home", type: "root", onClick: onHome, key: "home" });
   if (provider) crumbs.push({ label: providerLabel || provider, type: "chip", onClick: () => onGroup?.(provider, key), key: "provider" });
   if (key) crumbs.push({ label: key, type: "chip", onClick: () => onGroup?.(provider, key), key: "group" });
   if (currentRepo?.name) crumbs.push({ label: currentRepo.name, type: "current", key: "repo" });
@@ -427,6 +427,20 @@ function RepoActions({ repo, meta, setMeta }) {
     };
   }, [manualDiffFullscreen]);
 
+  useEffect(() => {
+    if ((changedFiles || []).length > 0) return;
+    setManualDiffFullscreen(false);
+    try {
+      const cur = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+      if (cur) {
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        else if (document.mozCancelFullScreen) document.mozCancelFullScreen();
+        else if (document.msExitFullscreen) document.msExitFullscreen();
+      }
+    } catch {}
+  }, [changedFiles]);
+
   const copyHash = async (hash) => {
     try {
       await navigator.clipboard.writeText(hash);
@@ -455,6 +469,8 @@ function RepoActions({ repo, meta, setMeta }) {
       }
     }
   };
+
+  const hasChanges = (changedFiles || []).length > 0;
 
   return (
     <div className="row">
@@ -520,117 +536,121 @@ function RepoActions({ repo, meta, setMeta }) {
         </div>
 
         <FileTree repoPath={meta.repoPath} onOpen={async (p)=>{ const r=await axios.get("/api/git/file",{params:{repoPath:meta.repoPath,path:p}}); setOpenFile(p); setOpenFileContent(r.data.text||""); }} />
-        {/* Patch preview moved here so that on desktop the terminal can occupy the left column alone */}
-        <div
-          ref={diffPaneRef}
-          className="pane"
-          style={(isDiffFullscreen || manualDiffFullscreen)
-            ? { height: '100vh', display: 'flex', flexDirection: 'column', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, borderRadius: 0, margin: 0 }
-            : { marginTop: 16 }}
-        >
-          <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-            <span style={{display:'inline-flex',alignItems:'center',gap:8}}>
-              <span>Patch preview</span>
-              {changedFiles.length > 0 && (
-                <span className="tag" title="Changed files count">{changedFiles.length} changed</span>
-              )}
-            </span>
-            <span style={{display:'inline-flex',alignItems:'center',gap:6,flexWrap:'wrap',justifyContent:'flex-end'}}>
-              <span className="muted" style={{marginRight:4}}>View:</span>
-              <button
-                className={"secondary" + (!showPretty && !threeWayActive ? " active" : "")}
-                onClick={() => { setThreeWayActive(false); setShowPretty(false); }}
-                title="Raw unified diff"
-              >Raw</button>
-              <button
-                className={"secondary" + (showPretty && prettyMode==='unified' && !threeWayActive ? " active" : "")}
-                onClick={() => { setThreeWayActive(false); setShowPretty(true); setPrettyMode('unified'); }}
-                title="Pretty diff (unified)"
-              >Pretty</button>
-              <button
-                className={"secondary" + (showPretty && prettyMode==='side-by-side' && !threeWayActive ? " active" : "")}
-                onClick={() => { setThreeWayActive(false); setShowPretty(true); setPrettyMode('side-by-side'); }}
-                title="Pretty diff (side-by-side)"
-              >Side-by-side</button>
-              <button
-                className={"secondary" + (threeWayActive ? " active" : "")}
-                onClick={() => setThreeWayActive(v => !v)}
-                disabled={!selectedDiffFile}
-                title={selectedDiffFile ? 'Three-way (base / HEAD / upstream)' : 'Select a file to enable three-way'}
-                style={!selectedDiffFile ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
-              >3‑way</button>
-              <button
-                className={"secondary icon" + ((isDiffFullscreen || manualDiffFullscreen) ? " active" : "")}
-                onClick={toggleDiffFullscreen}
-                title={(isDiffFullscreen || manualDiffFullscreen) ? 'Exit fullscreen' : 'Fullscreen patch'}
-              >{(isDiffFullscreen || manualDiffFullscreen) ? '⤡' : '⤢'}</button>
-            </span>
-          </div>
-          {changedFiles.length > 0 && (
-            <div className="muted" style={{margin:"6px 0 8px 0"}}>
-              <div>
-                <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                  {(showAllChanged ? changedFiles : changedFiles.slice(0, 15)).map((f, idx) => {
-                    const active = selectedDiffFile === f.path;
-                    const cls = "badge " + (f.status==='added'?'green':(f.status==='deleted'?'red':'gray')) + (active ? " selected" : " interactive");
-                    const onClick = () => setSelectedDiffFile(p => (p === f.path ? "" : f.path));
-                    const onKey = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } };
-                    return (
-                      <span
-                        key={idx}
-                        className={cls}
-                        title={(f.status||'') + (active ? ' • selected' : '')}
-                        role="button"
-                        tabIndex={0}
-                        onClick={onClick}
-                        onKeyDown={onKey}
-                        aria-pressed={active ? 'true' : 'false'}
-                      >{f.path}</span>
-                    );
-                  })}
-                  {(!showAllChanged && changedFiles.length > 15) && (
-                    <button className="secondary" onClick={() => setShowAllChanged(true)}>+{changedFiles.length - 15} more</button>
+        {hasChanges && (
+          <>
+            {/* Patch preview moved here so that on desktop the terminal can occupy the left column alone */}
+            <div
+              ref={diffPaneRef}
+              className="pane"
+              style={(isDiffFullscreen || manualDiffFullscreen)
+                ? { height: '100vh', display: 'flex', flexDirection: 'column', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, borderRadius: 0, margin: 0 }
+                : { marginTop: 16 }}
+            >
+              <div className="muted" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                <span style={{display:'inline-flex',alignItems:'center',gap:8}}>
+                  <span>DIFF</span>
+                  {changedFiles.length > 0 && (
+                    <span className="tag" title="Changed files count">{changedFiles.length} changed</span>
                   )}
-                </div>
+                </span>
+                <span style={{display:'inline-flex',alignItems:'center',gap:6,flexWrap:'wrap',justifyContent:'flex-end'}}>
+                  <span className="muted" style={{marginRight:4}}>View:</span>
+                  <button
+                    className={"secondary" + (!showPretty && !threeWayActive ? " active" : "")}
+                    onClick={() => { setThreeWayActive(false); setShowPretty(false); }}
+                    title="Raw unified diff"
+                  >Raw</button>
+                  <button
+                    className={"secondary" + (showPretty && prettyMode==='unified' && !threeWayActive ? " active" : "")}
+                    onClick={() => { setThreeWayActive(false); setShowPretty(true); setPrettyMode('unified'); }}
+                    title="Pretty diff (unified)"
+                  >Pretty</button>
+                  <button
+                    className={"secondary" + (showPretty && prettyMode==='side-by-side' && !threeWayActive ? " active" : "")}
+                    onClick={() => { setThreeWayActive(false); setShowPretty(true); setPrettyMode('side-by-side'); }}
+                    title="Pretty diff (side-by-side)"
+                  >Side-by-side</button>
+                  <button
+                    className={"secondary" + (threeWayActive ? " active" : "")}
+                    onClick={() => setThreeWayActive(v => !v)}
+                    disabled={!selectedDiffFile}
+                    title={selectedDiffFile ? 'Three-way (base / HEAD / upstream)' : 'Select a file to enable three-way'}
+                    style={!selectedDiffFile ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
+                  >3‑way</button>
+                  <button
+                    className={"secondary icon" + ((isDiffFullscreen || manualDiffFullscreen) ? " active" : "")}
+                    onClick={toggleDiffFullscreen}
+                    title={(isDiffFullscreen || manualDiffFullscreen) ? 'Exit fullscreen' : 'Fullscreen patch'}
+                  >{(isDiffFullscreen || manualDiffFullscreen) ? '⤡' : '⤢'}</button>
+                </span>
               </div>
-            </div>
-          )}
-          {(threeWayActive && selectedDiffFile) ? (
-            <div style={isDiffFullscreen ? { flex: 1, display:'flex', flexDirection:'column', minHeight:0 } : {}}>
-              {threeWayLoading ? (
-                <div className="muted">Loading 3‑way…</div>
-              ) : threeWayError ? (
-                <div className="muted">{threeWayError}</div>
-              ) : (threeWayData ? (
-                <div>
-                  <div className="muted" style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>
-                    <span>Base: {threeWayData.baseRef?.slice?.(0,8) || 'n/a'}</span>
-                    <span>Ours: {threeWayData.oursRef || 'HEAD'}</span>
-                    <span>Theirs: {threeWayData.theirsRef || ''}</span>
-                  </div>
-                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, alignItems:'stretch'}}>
-                    <div>
-                      <div className="muted" style={{marginBottom:4}}>Base</div>
-                      <code className="diff" style={{maxHeight:isDiffFullscreen? 'none':'50vh'}}>{threeWayData.base || ''}</code>
-                    </div>
-                    <div>
-                      <div className="muted" style={{marginBottom:4}}>Ours (HEAD)</div>
-                      <code className="diff" style={{maxHeight:isDiffFullscreen? 'none':'50vh'}}>{threeWayData.ours || ''}</code>
-                    </div>
-                    <div>
-                      <div className="muted" style={{marginBottom:4}}>Theirs (upstream)</div>
-                      <code className="diff" style={{maxHeight:isDiffFullscreen? 'none':'50vh'}}>{threeWayData.theirs || ''}</code>
+              {changedFiles.length > 0 && (
+                <div className="muted" style={{margin:"6px 0 8px 0"}}>
+                  <div>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                      {(showAllChanged ? changedFiles : changedFiles.slice(0, 15)).map((f, idx) => {
+                        const active = selectedDiffFile === f.path;
+                        const cls = "badge " + (f.status==='added'?'green':(f.status==='deleted'?'red':'gray')) + (active ? " selected" : " interactive");
+                        const onClick = () => setSelectedDiffFile(p => (p === f.path ? "" : f.path));
+                        const onKey = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } };
+                        return (
+                          <span
+                            key={idx}
+                            className={cls}
+                            title={(f.status||'') + (active ? ' • selected' : '')}
+                            role="button"
+                            tabIndex={0}
+                            onClick={onClick}
+                            onKeyDown={onKey}
+                            aria-pressed={active ? 'true' : 'false'}
+                          >{f.path}</span>
+                        );
+                      })}
+                      {(!showAllChanged && changedFiles.length > 15) && (
+                        <button className="secondary" onClick={() => setShowAllChanged(true)}>+{changedFiles.length - 15} more</button>
+                      )}
                     </div>
                   </div>
                 </div>
+              )}
+              {(threeWayActive && selectedDiffFile) ? (
+                <div style={isDiffFullscreen ? { flex: 1, display:'flex', flexDirection:'column', minHeight:0 } : {}}>
+                  {threeWayLoading ? (
+                    <div className="muted">Loading 3‑way…</div>
+                  ) : threeWayError ? (
+                    <div className="muted">{threeWayError}</div>
+                  ) : (threeWayData ? (
+                    <div>
+                      <div className="muted" style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+                        <span>Base: {threeWayData.baseRef?.slice?.(0,8) || 'n/a'}</span>
+                        <span>Ours: {threeWayData.oursRef || 'HEAD'}</span>
+                        <span>Theirs: {threeWayData.theirsRef || ''}</span>
+                      </div>
+                      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, alignItems:'stretch'}}>
+                        <div>
+                          <div className="muted" style={{marginBottom:4}}>Base</div>
+                          <code className="diff" style={{maxHeight:isDiffFullscreen? 'none':'50vh'}}>{threeWayData.base || ''}</code>
+                        </div>
+                        <div>
+                          <div className="muted" style={{marginBottom:4}}>Ours (HEAD)</div>
+                          <code className="diff" style={{maxHeight:isDiffFullscreen? 'none':'50vh'}}>{threeWayData.ours || ''}</code>
+                        </div>
+                        <div>
+                          <div className="muted" style={{marginBottom:4}}>Theirs (upstream)</div>
+                          <code className="diff" style={{maxHeight:isDiffFullscreen? 'none':'50vh'}}>{threeWayData.theirs || ''}</code>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null)}
+                </div>
+              ) : ((displayedPatch || '').trim() ? (
+                showPretty
+                  ? <DiffPretty diff={displayedPatch} mode={prettyMode === 'side-by-side' ? 'side-by-side' : 'unified'} />
+                  : <code className="diff" style={isDiffFullscreen ? { flex: 1, minHeight: 0, maxHeight: 'none' } : {}}>{displayedPatch}</code>
               ) : null)}
             </div>
-          ) : ((displayedPatch || '').trim() ? (
-            showPretty
-              ? <DiffPretty diff={displayedPatch} mode={prettyMode === 'side-by-side' ? 'side-by-side' : 'unified'} />
-              : <code className="diff" style={isDiffFullscreen ? { flex: 1, minHeight: 0, maxHeight: 'none' } : {}}>{displayedPatch}</code>
-          ) : null)}
-        </div>
+          </>
+        )}
       </div>
 
       <div className="col cli-col">
