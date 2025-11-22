@@ -521,27 +521,29 @@ function RepoActions({ repo, meta, setMeta }) {
                   : (pullInfo.upToDate ? 'Up to date' : 'git pull')}
               </button>
             ); })()}
+            {/* Move branch dropdown immediately to the right of the Up to date/pull button */}
+            <select id="branch-select" value={current} onChange={e => doCheckout(e.target.value)}>
+              {branches.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+            {/* Keep pull status text after branch selector */}
             <span className="muted">
               {pullInfo.at
                 ? `Last pull: ${new Date(pullInfo.at).toLocaleTimeString()}`
                 : (pullInfo.upToDate === null ? 'Never pulled' : (pullInfo.behind > 0 ? `Behind ${pullInfo.behind}` : ''))}
             </span>
-            <select id="branch-select" value={current} onChange={e => doCheckout(e.target.value)}>
-              {branches.map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
             {(() => { const canPush = Boolean((patch||"").trim()); return (
               <button onClick={doApplyCommitPush} disabled={!canPush || pushing} style={(!canPush || pushing) ? {opacity:0.6, cursor:'not-allowed'} : {}}>
                 {pushing ? '⏳ Pushing…' : 'Apply & Push'}
               </button>
             );})()}
-          </div>
-          {/* Last commit: only show a clickable "Last commit" text linking to provider, no extra data */}
-          <div className="muted" style={{marginTop:8}}>
-            {(log && log.length && log[0].web_url) ? (
-              <a href={log[0].web_url} target="_blank" rel="noreferrer" title="Open last commit in provider">Last commit</a>
-            ) : (
-              <span>Last commit</span>
-            )}
+            {/* Move Last commit link to the right of the Apply & Push button */}
+            <span className="muted">
+              {(log && log.length && log[0].web_url) ? (
+                <a href={log[0].web_url} target="_blank" rel="noreferrer" title="Open last commit in provider">Last commit</a>
+              ) : (
+                <span>Last commit</span>
+              )}
+            </span>
           </div>
         </div>
 
