@@ -5,6 +5,11 @@ import FileTree from "./FileTree.jsx";
 import DiffPretty from "./DiffPretty.jsx";
 import { ToastProvider, useToast } from "./ToastContext.jsx";
 
+const makeTabId = (id = "") => {
+  const safe = (id || "default").replace(/[^a-zA-Z0-9_-]/g, "-");
+  return `tab-${safe}`;
+};
+
 function GroupTabs({ providers, current, setCurrent }) {
   const items = [];
   if (providers.github) {
@@ -14,23 +19,34 @@ function GroupTabs({ providers, current, setCurrent }) {
     for (const key of Object.keys(providers.gitlab)) items.push({ provider: "gitlab", key });
   }
   return (
-    <div className="tabs">
-      {items.map((it, idx) => {
+    <div className="tabs" role="tablist" aria-label="Organizations">
+      {items.map((it) => {
         const id = `${it.provider}:${it.key}`;
         const active = current === id;
         const count = (providers[it.provider]?.[it.key] || []).length;
+        const providerLabel = it.provider === "github" ? "GitHub" : (it.provider === "gitlab" ? "GitLab" : it.provider);
+        const tabLabel = `${providerLabel} / ${it.key}`;
+        const tabId = makeTabId(id);
         return (
-          <div
-            key={idx}
+          <button
+            key={id}
+            id={tabId}
+            type="button"
             className={"tab " + (active ? "active" : "")}
             onClick={() => setCurrent(id)}
-            aria-current={active ? 'page' : undefined}
-            title={`${it.provider} / ${it.key}`}
+            role="tab"
+            aria-selected={active}
+            aria-controls="repo-panel"
+            aria-label={tabLabel}
+            title={tabLabel}
           >
-            {active && <span className="current-dot" />}
-            <span style={{fontWeight: active ? 600 : 500}}>{it.provider} / {it.key}</span>
-            <span className="tag" style={{marginLeft: 6}}>{count}</span>
-          </div>
+            <span className="tab-label">
+              <span className="tab-provider">{providerLabel}</span>
+              <span className="tab-divider">/</span>
+              <span className="tab-key">{it.key}</span>
+            </span>
+            <span className="tag" style={{ marginLeft: 6 }}>{count}</span>
+          </button>
         );
       })}
     </div>
@@ -83,8 +99,9 @@ function RepoList({ repos, onSelect, currentId }) {
         return fields.some(v => (v || '').toLowerCase().includes(ql));
       })
     : sorted;
+  const tabLabelId = currentId ? makeTabId(currentId) : undefined;
   return (
-    <div className="pane">
+    <div className="pane" id="repo-panel" role="tabpanel" aria-labelledby={tabLabelId}>
       <input
         placeholder="Search repos..."
         value={q}
@@ -955,7 +972,15 @@ export default function App() {
         )}
         {!currentRepo ? (
           loadingRepos ? (
-            <div className="pane"><div className="muted">Loading repos…</div></div>
+            <div
+              className="pane"
+              id="repo-panel"
+              role="tabpanel"
+              aria-busy="true"
+              aria-labelledby={current ? makeTabId(current) : undefined}
+            >
+              <div className="muted">Loading repos…</div>
+            </div>
           ) : (
             <RepoList
               key={current}
