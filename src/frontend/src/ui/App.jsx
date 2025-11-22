@@ -630,8 +630,8 @@ export default function App() {
   };
 
   // --- Simple hash router ---
-  function parseHash() {
-    const h = (location.hash || '').replace(/^#/, '');
+  function parseHashString(raw) {
+    const h = (raw || '').replace(/^#/, '');
     if (!h) return { page: 'repos' };
     const [page, qs] = h.split('?');
     const params = {};
@@ -643,6 +643,43 @@ export default function App() {
     }
     return { page: page || 'repos', params };
   }
+  function parseLocation() {
+    // Prefer hash-based routes for backward compatibility
+    const rawHash = (location.hash || '').replace(/^#/, '');
+    if (rawHash) return parseHashString(rawHash);
+    // Fallback: path-based routes, e.g. /github/user/repo or /gitlab/group/sub/project
+    const path = (location.pathname || '/').replace(/^\/+|\/+$/g, '');
+    if (!path) return { page: 'repos', params: {} };
+    const parts = path.split('/').map((s) => decodeURIComponent(s || '')).filter(Boolean);
+    if (parts.length === 0) return { page: 'repos', params: {} };
+    const [providerRaw, ...rest] = parts;
+    const provider = providerRaw.toLowerCase();
+    const params = {};
+    if (provider === 'github') {
+      params.provider = 'github';
+      if (rest.length >= 1) {
+        const owner = rest[0];
+        if (owner) params.key = owner;
+        if (rest.length >= 2 && owner) {
+          const repoName = rest[1];
+          if (repoName) params.repo = `${owner}/${repoName}`;
+        }
+      }
+    } else if (provider === 'gitlab') {
+      params.provider = 'gitlab';
+      if (rest.length === 1) {
+        params.key = rest[0];
+      } else if (rest.length >= 2) {
+        const group = rest.slice(0, rest.length - 1).join('/');
+        const project = rest[rest.length - 1];
+        if (group) params.key = group;
+        if (group && project) params.repo = `${group}/${project}`;
+      }
+    } else {
+      return { page: 'repos', params: {} };
+    }
+    return { page: 'repos', params };
+  }
   function buildHash(next) {
     const { page = 'repos', params = {} } = next || {};
     const qs = Object.entries(params)
@@ -650,6 +687,27 @@ export default function App() {
       .map(([k,v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
       .join('&');
     return `#${page}${qs ? '?' + qs : ''}`;
+  }
+  function buildPathFromState(p = phase, cur = current, repo = currentRepo) {
+    // Only rewrite path when a repo is open; otherwise keep current path
+    if (p !== 'repos' || !repo) return location.pathname || '/';
+    const [prov, key] = (cur || '').split(':');
+    const provider = (prov || '').toLowerCase();
+    if (!provider || !key) return location.pathname || '/';
+    if (provider === 'github') {
+      const owner = key;
+      const repoName = repo.name || (repo.full_name || '').split('/')[1] || '';
+      if (!owner || !repoName) return location.pathname || '/';
+      return `/github/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}`;
+    }
+    if (provider === 'gitlab') {
+      const group = key;
+      const groupPath = group.split('/').map((s) => encodeURIComponent(s)).join('/');
+      const repoName = repo.name || (repo.path_with_namespace || '').split('/').pop() || '';
+      if (!group || !repoName) return location.pathname || '/';
+      return `/gitlab/${groupPath}/${encodeURIComponent(repoName)}`;
+    }
+    return location.pathname || '/';
   }
   function updateHashFromState(p = phase, cur = current, repo = currentRepo) {
     const params = {};
@@ -662,8 +720,19 @@ export default function App() {
         if (id) params.repo = id;
       }
     }
-    const target = buildHash({ page: p, params });
-    if (location.hash !== target) location.hash = target;
+    const targetHash = buildHash({ page: p, params });
+    try {
+      const targetPath = buildPathFromState(p, cur, repo);
+      const url = `${targetPath}${location.search || ''}${targetHash}`;
+      if (window.history && typeof window.history.replaceState === 'function') {
+        const currentUrl = `${location.pathname}${location.search || ''}${location.hash || ''}`;
+        if (currentUrl !== url) window.history.replaceState(null, '', url);
+      } else if (location.hash !== targetHash) {
+        location.hash = targetHash;
+      }
+    } catch {
+      if (location.hash !== targetHash) location.hash = targetHash;
+    }
   }
   function applyRoute(route) {
     routeRef.current = route;
@@ -681,10 +750,15 @@ export default function App() {
 
   // Initial route parse
   useEffect(() => {
-    applyRoute(parseHash());
-    const onHash = () => applyRoute(parseHash());
-    window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
+    const apply = () => applyRoute(parseLocation());
+    apply();
+    const onChange = () => applyRoute(parseLocation());
+    window.addEventListener('hashchange', onChange);
+    window.addEventListener('popstate', onChange);
+    return () => {
+      window.removeEventListener('hashchange', onChange);
+      window.removeEventListener('popstate', onChange);
+    };
   }, []);
 
   useEffect(() => {
