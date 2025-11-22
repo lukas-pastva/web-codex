@@ -37,6 +37,36 @@ function GroupTabs({ providers, current, setCurrent }) {
   );
 }
 
+function Breadcrumbs({ current, currentRepo, onHome, onGroup }) {
+  const [providerRaw, key] = (current || "").split(":");
+  const provider = providerRaw || "";
+  const providerLabel = provider === "github" ? "GitHub" : (provider === "gitlab" ? "GitLab" : provider);
+  const crumbs = [];
+  crumbs.push({ label: "web-codex", type: "root", onClick: onHome, key: "home" });
+  if (provider) crumbs.push({ label: providerLabel || provider, type: "chip", onClick: () => onGroup?.(provider, key), key: "provider" });
+  if (key) crumbs.push({ label: key, type: "chip", onClick: () => onGroup?.(provider, key), key: "group" });
+  if (currentRepo?.name) crumbs.push({ label: currentRepo.name, type: "current", key: "repo" });
+  return (
+    <nav className="breadcrumbs" aria-label="Breadcrumb">
+      {crumbs.map((c, idx) => (
+        <React.Fragment key={c.key || idx}>
+          {idx > 0 && <span className="divider">/</span>}
+          <span
+            className={`crumb ${c.type || ""} ${c.onClick ? "clickable" : ""}`}
+            onClick={c.onClick}
+            role={c.onClick ? "button" : undefined}
+            tabIndex={c.onClick ? 0 : -1}
+            onKeyDown={c.onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); c.onClick(); } } : undefined}
+            aria-current={c.type === "current" ? "page" : undefined}
+          >
+            {c.label}
+          </span>
+        </React.Fragment>
+      ))}
+    </nav>
+  );
+}
+
 function RepoList({ repos, onSelect, currentId }) {
   const [q, setQ] = useState("");
   const sorted = [...repos].sort((a,b)=>{
@@ -623,10 +653,28 @@ export default function App() {
   const [pendingRepoId, setPendingRepoId] = useState("");
 
   const handleGoHome = () => {
+    const [prov, key] = (current || '').split(':');
+    routeRef.current = { page: 'repos', params: { provider: prov, key } };
     setPhase('repos');
     setCurrentRepo(null);
     setMeta({ repoPath: "" });
+    setPendingRepoId('');
     updateHashFromState('repos', current, null);
+  };
+
+  const handleGoGroup = (prov, key) => {
+    if (!prov || !key) {
+      handleGoHome();
+      return;
+    }
+    const id = `${prov}:${key}`;
+    routeRef.current = { page: 'repos', params: { provider: prov, key } };
+    setPhase('repos');
+    setCurrent(id);
+    setCurrentRepo(null);
+    setMeta({ repoPath: "" });
+    setPendingRepoId('');
+    updateHashFromState('repos', id, null);
   };
 
   // --- Simple hash router ---
@@ -869,14 +917,22 @@ export default function App() {
     <div>
       
       <header>
-        <div style={{cursor:'pointer'}} onClick={handleGoHome} title="Home (repos)"><strong>web-codex</strong></div>
-        
+        <div style={{flex:1, minWidth:0}}>
+          <Breadcrumbs
+            current={current}
+            currentRepo={currentRepo}
+            onHome={handleGoHome}
+            onGroup={handleGoGroup}
+          />
+        </div>
         <div style={{marginLeft:'auto', display:'flex', gap:8, alignItems:'center'}}>
           <button className="secondary icon" onClick={cycleTheme} title={`Theme: ${themeMode}`}>{themeIcon}</button>
         </div>
       </header>
       <div className="container">
-        <GroupTabs providers={providers} current={current} setCurrent={setCurrent} />
+        {!currentRepo && (
+          <GroupTabs providers={providers} current={current} setCurrent={setCurrent} />
+        )}
         {!currentRepo ? (
           loadingRepos ? (
             <div className="pane"><div className="muted">Loading repos…</div></div>
