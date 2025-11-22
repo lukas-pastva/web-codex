@@ -53,7 +53,7 @@ function GroupTabs({ providers, current, setCurrent }) {
   );
 }
 
-function Breadcrumbs({ current, currentRepo, onHome, onGroup }) {
+function Breadcrumbs({ current, onHome, onGroup }) {
   const [providerRaw, key] = (current || "").split(":");
   const provider = providerRaw || "";
   const providerLabel = provider === "github" ? "GitHub" : (provider === "gitlab" ? "GitLab" : provider);
@@ -61,7 +61,6 @@ function Breadcrumbs({ current, currentRepo, onHome, onGroup }) {
   crumbs.push({ label: "Home", type: "root", onClick: onHome, key: "home" });
   if (provider) crumbs.push({ label: providerLabel || provider, type: "chip", onClick: () => onGroup?.(provider, key), key: "provider" });
   if (key) crumbs.push({ label: key, type: "chip", onClick: () => onGroup?.(provider, key), key: "group" });
-  if (currentRepo?.name) crumbs.push({ label: currentRepo.name, type: "current", key: "repo" });
   return (
     <nav className="breadcrumbs" aria-label="Breadcrumb">
       {crumbs.map((c, idx) => (
@@ -957,7 +956,6 @@ export default function App() {
         <div style={{flex:1, minWidth:0}}>
           <Breadcrumbs
             current={current}
-            currentRepo={currentRepo}
             onHome={handleGoHome}
             onGroup={handleGoGroup}
           />
@@ -990,21 +988,11 @@ export default function App() {
             />
           )
         ) : (
-          <>
-            <div className="pane" style={{marginBottom:12}}>
-              <div className="actions" style={{display:'flex',alignItems:'center',gap:8}}>
-                <div className="muted">
-                  {(() => { const [prov, key] = (current||'').split(':'); return `${prov||''}${key? ' / ' + key : ''}`; })()}
-                  {currentRepo ? ` / ${currentRepo.name}` : ''}
-                </div>
-              </div>
-            </div>
-            <RepoActions
-              repo={currentRepo}
-              meta={meta}
-              setMeta={setMeta}
-            />
-          </>
+          <RepoActions
+            repo={currentRepo}
+            meta={meta}
+            setMeta={setMeta}
+          />
         )}
       </div>
       {null}
