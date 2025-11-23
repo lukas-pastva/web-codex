@@ -599,6 +599,8 @@ app.get("/api/git/log", async (req, res) => {
     const git = simpleGit(repoPath);
     const log = await git.log({ n: 30 });
     // attach remote web URLs if possible
+    // Prevent any intermediate/browser caches from serving stale commit history
+    try { res.set("Cache-Control", "no-store"); } catch {}
     let webBase = "";
     try {
       const remotes = await git.getRemotes(true);

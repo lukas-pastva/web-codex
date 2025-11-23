@@ -315,10 +315,19 @@ function RepoActions({ repo, meta, setMeta }) {
       setPushing(true);
       const message = "codex-" + new Date().toISOString();
       const r = await axios.post("/api/git/commitPush", { repoPath: meta.repoPath, message });
-      // Copy the new commit hash to clipboard as part of push
-      const newHash = r?.data?.commit?.commit || "";
-      if (newHash) {
-        try { await copyHash(newHash); } catch {}
+      // Prefer querying HEAD after push to avoid any stale values
+      let copied = false;
+      try {
+        const lr = await axios.get("/api/git/log", { params: { repoPath: meta.repoPath }});
+        const headHash = lr?.data?.commits?.[0]?.hash || "";
+        if (headHash) { await copyHash(headHash); copied = true; }
+      } catch {}
+      // Fallback to the commit returned by commitPush
+      if (!copied) {
+        const newHash = r?.data?.commit?.commit || r?.data?.commit?.hash || "";
+        if (newHash) {
+          try { await copyHash(newHash); } catch {}
+        }
       }
       await refreshLog();
       await refreshDiff();
@@ -473,8 +482,10 @@ function RepoActions({ repo, meta, setMeta }) {
   }, [changedFiles]);
 
   const copyHash = async (hash) => {
+    const text = String(hash || "").trim();
+    if (!text) { try { toast && toast("No commit hash to copy"); } catch {}; return; }
     try {
-      await navigator.clipboard.writeText(hash);
+      await navigator.clipboard.writeText(text);
       // Visual feedback on the button
       if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
       setCopied(true);
@@ -484,7 +495,7 @@ function RepoActions({ repo, meta, setMeta }) {
     } catch (e) {
       try {
         const ta = document.createElement('textarea');
-        ta.value = hash;
+        ta.value = text;
         ta.style.position = 'fixed';
         ta.style.opacity = '0';
         document.body.appendChild(ta);
