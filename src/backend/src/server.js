@@ -281,6 +281,11 @@ app.post("/api/git/commitPush", async (req, res) => {
     } catch {}
     const msg = message || `codex-${new Date().toISOString()}`;
     const commit = await git.commit(msg);
+    // Ensure we return the actual new commit hash from HEAD
+    try {
+      const head = (await git.raw(["rev-parse", "HEAD"]).catch(() => "")).trim();
+      if (head) { commit.commit = head; commit.hash = head; }
+    } catch {}
     // Push with token in remote URL if needed
     const remotes = await git.getRemotes(true);
     let origin = remotes.find(r => r.name === "origin");
@@ -570,6 +575,11 @@ app.post("/api/git/apply-commit-push", async (req, res) => {
     await git.add("--all");
     const msg = message || `codex-${new Date().toISOString()}`;
     const commit = await git.commit(msg);
+    // Ensure we return the actual new commit hash from HEAD
+    try {
+      const head = (await git.raw(["rev-parse", "HEAD"]).catch(() => "")).trim();
+      if (head) { commit.commit = head; commit.hash = head; }
+    } catch {}
     const remotes = await git.getRemotes(true);
     let origin = remotes.find(r => r.name === "origin");
     if (!origin) throw new Error("No origin remote configured");
