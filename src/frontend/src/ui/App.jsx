@@ -315,21 +315,25 @@ function RepoActions({ repo, meta, setMeta }) {
       setPushing(true);
       const message = "codex-" + new Date().toISOString();
       const r = await axios.post("/api/git/commitPush", { repoPath: meta.repoPath, message });
-      // Prefer querying HEAD after push to avoid any stale values
-      let copied = false;
-      try {
-        const lr = await axios.get("/api/git/log", { params: { repoPath: meta.repoPath }});
-        const headHash = lr?.data?.commits?.[0]?.hash || "";
-        if (headHash) { await copyHash(headHash); copied = true; }
-      } catch {}
-      // Fallback to the commit returned by commitPush
-      if (!copied) {
-        const newHash = r?.data?.commit?.commit || r?.data?.commit?.hash || "";
-        if (newHash) {
-          try { await copyHash(newHash); } catch {}
-        }
+      // Prefer the commit hash returned by the backend (authoritative)
+      const newHash = r?.data?.commit?.commit || r?.data?.commit?.hash || "";
+      if (newHash) {
+        try { await copyHash(newHash); } catch {}
+      } else {
+        // Fallback: query HEAD from log if backend did not supply hash
+        try {
+          const lr = await axios.get("/api/git/log", { params: { repoPath: meta.repoPath }});
+          const headHash = lr?.data?.commits?.[0]?.hash || "";
+          if (headHash) { await copyHash(headHash); }
+        } catch {}
       }
+      // Refresh log and diff; allow a short retry for log to include new HEAD
       await refreshLog();
+      try {
+        // One small retry to mitigate any async lag in reading log
+        await new Promise(r => setTimeout(r, 150));
+        await refreshLog();
+      } catch {}
       await refreshDiff();
       toast && toast("Pushed ✅");
     } catch (e) {
