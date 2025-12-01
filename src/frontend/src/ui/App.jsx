@@ -586,7 +586,7 @@ function RepoActions({ repo, meta, setMeta }) {
                   ? `Last pull: ${new Date(pullInfo.at).toLocaleTimeString()}`
                   : (pullInfo.upToDate === null ? 'Never pulled' : (pullInfo.behind > 0 ? `Behind ${pullInfo.behind}` : '')))}
             </span>
-            {(() => { const disabled = discarding || pulling; return (
+            {hasChanges && (() => { const disabled = discarding || pulling; return (
               <button
                 className="secondary danger"
                 onClick={doDiscardChanges}
