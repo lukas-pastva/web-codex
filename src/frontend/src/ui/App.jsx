@@ -156,8 +156,10 @@ function RepoActions({ repo, meta, setMeta }) {
   const [manualDiffFullscreen, setManualDiffFullscreen] = useState(false);
   // Always auto-refresh patch every 5 seconds (mobile-friendly)
   const [pullInfo, setPullInfo] = useState({ at: null, upToDate: null, behind: 0 });
+  const [pullError, setPullError] = useState("");
   const [pulling, setPulling] = useState(false);
   const [pushing, setPushing] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   // Only show the latest commit
   const [changedFiles, setChangedFiles] = useState([]);
   const [showAllChanged, setShowAllChanged] = useState(false);
@@ -167,6 +169,7 @@ function RepoActions({ repo, meta, setMeta }) {
   // Haptics: vibrate on new changes when supported (mobile)
   const prevChangedCountRef = useRef(0);
   const lastVibeAtRef = useRef(0);
+  const autoPullRepoRef = useRef("");
 
   const loadBranches = async () => {
     const r = await axios.get("/api/git/branches", { params: { repoPath: meta.repoPath }});
@@ -188,6 +191,7 @@ function RepoActions({ repo, meta, setMeta }) {
 
   useEffect(() => {
     if (meta.repoPath) {
+      setPullError("");
       loadBranches();
       refreshLog();
       refreshStatus();
@@ -197,8 +201,10 @@ function RepoActions({ repo, meta, setMeta }) {
 
   // Terminal is always visible
 
-  const doPull = async () => {
+  const doPull = async (opts = {}) => {
+    const { auto = false } = opts;
     try {
+      setPullError("");
       setPulling(true);
       const r = await axios.post("/api/git/pull", { repoPath: meta.repoPath });
       const up = Boolean(r.data?.status?.upToDate);
@@ -213,15 +219,24 @@ function RepoActions({ repo, meta, setMeta }) {
       const msg = up
         ? "Already up to date ✅"
         : (pulled > 0 ? `Pulled ${pulled} commit${pulled===1?'':'s'} ✅` : "Pull complete ✅");
-      toast && toast(msg);
+      if (!auto) toast && toast(msg);
     } catch (e) {
       const msg = e?.response?.data?.error || e?.message || "Pull failed";
+      setPullError(msg);
       try { toast && toast(`Pull failed: ${msg}`); } catch {}
-      try { alert(`Pull failed: ${msg}`); } catch {}
+      if (!auto) { try { alert(`Pull failed: ${msg}`); } catch {} }
     } finally {
       setPulling(false);
     }
   };
+
+  // Auto-run git pull once when a repo is opened
+  useEffect(() => {
+    if (!meta.repoPath) { autoPullRepoRef.current = ""; return; }
+    if (autoPullRepoRef.current === meta.repoPath) return;
+    autoPullRepoRef.current = meta.repoPath;
+    doPull({ auto: true }).catch(()=>{});
+  }, [meta.repoPath]);
 
   const doCheckout = async (b) => {
     await axios.post("/api/git/checkout", { repoPath: meta.repoPath, branch: b });
@@ -342,6 +357,27 @@ function RepoActions({ repo, meta, setMeta }) {
       try { alert(`Push failed: ${msg}`); } catch {}
     } finally {
       setPushing(false);
+    }
+  };
+
+  const doDiscardChanges = async () => {
+    if (!meta.repoPath || discarding) return;
+    if (!window.confirm("Discard ALL local changes? This resets tracked files and removes untracked files.")) return;
+    try {
+      setDiscarding(true);
+      setPullError("");
+      await axios.post("/api/git/discard", { repoPath: meta.repoPath });
+      setSelectedDiffFile("");
+      await refreshDiff();
+      await refreshStatus();
+      toast && toast("Local changes discarded ✅");
+      try { await doPull({ auto: true }); } catch {}
+    } catch (e) {
+      const msg = e?.response?.data?.error || e?.message || "Discard failed";
+      try { toast && toast(`Discard failed: ${msg}`); } catch {}
+      try { alert(`Discard failed: ${msg}`); } catch {}
+    } finally {
+      setDiscarding(false);
     }
   };
 
@@ -523,17 +559,19 @@ function RepoActions({ repo, meta, setMeta }) {
       <div className="col main-col">
         <div className="pane">
           <div className="actions" style={{marginBottom:8, display:'flex', flexWrap:'wrap', gap:8, alignItems:'center'}}>
-            {(() => { const disabled = pulling; return (
+            {(() => { const disabled = pulling || discarding; const btnClass = "secondary" + (pullError ? " danger" : ""); const label = pulling
+              ? (<><span className="spinner" aria-hidden="true" /> Pulling…</>)
+              : (pullError ? 'Pull failed (retry)' : (pullInfo.upToDate ? 'Up to date' : 'git pull'));
+              const title = pulling ? 'Pulling…' : (pullError ? `Pull failed: ${pullError}` : 'Fetch and pull latest');
+              return (
               <button
-                className={"secondary"}
+                className={btnClass}
                 onClick={doPull}
                 disabled={disabled}
-                title={pulling ? 'Pulling…' : 'Fetch and pull latest'}
+                title={title}
                 style={disabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
               >
-                {pulling
-                  ? (<><span className="spinner" aria-hidden="true" /> Pulling…</>)
-                  : (pullInfo.upToDate ? 'Up to date' : 'git pull')}
+                {label}
               </button>
             ); })()}
             {/* Move branch dropdown immediately to the right of the Up to date/pull button */}
@@ -541,13 +579,26 @@ function RepoActions({ repo, meta, setMeta }) {
               {branches.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
             {/* Keep pull status text after branch selector */}
-            <span className="muted">
-              {pullInfo.at
-                ? `Last pull: ${new Date(pullInfo.at).toLocaleTimeString()}`
-                : (pullInfo.upToDate === null ? 'Never pulled' : (pullInfo.behind > 0 ? `Behind ${pullInfo.behind}` : ''))}
+            <span className="muted" style={pullError ? { color: '#f87171', fontWeight: 600 } : {}}>
+              {pullError
+                ? `Pull failed: ${pullError}`
+                : (pullInfo.at
+                  ? `Last pull: ${new Date(pullInfo.at).toLocaleTimeString()}`
+                  : (pullInfo.upToDate === null ? 'Never pulled' : (pullInfo.behind > 0 ? `Behind ${pullInfo.behind}` : '')))}
             </span>
+            {(() => { const disabled = discarding || pulling; return (
+              <button
+                className="secondary danger"
+                onClick={doDiscardChanges}
+                disabled={disabled}
+                title="Discard all local changes (reset + clean)"
+                style={disabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
+              >
+                {discarding ? 'Discarding…' : 'Discard local changes'}
+              </button>
+            ); })()}
             {(() => { const canPush = Boolean((patch||"").trim()); return (
-              <button onClick={doApplyCommitPush} disabled={!canPush || pushing} style={(!canPush || pushing) ? {opacity:0.6, cursor:'not-allowed'} : {}}>
+              <button onClick={doApplyCommitPush} disabled={!canPush || pushing || discarding} style={(!canPush || pushing || discarding) ? {opacity:0.6, cursor:'not-allowed'} : {}}>
                 {pushing ? '⏳ Pushing…' : 'Apply & Push'}
               </button>
             );})()}

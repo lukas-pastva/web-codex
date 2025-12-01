@@ -27,6 +27,10 @@
         --badge-green-bg: #064e3b;
         --badge-red-bg: #7f1d1d;
         --badge-gray-bg: #374151;
+        --danger-bg: #b91c1c;
+        --danger-soft-bg: #7f1d1d;
+        --danger-text: #ffffff;
+        --danger-soft-text: #fecaca;
       }
       /* Light theme values when auto (no data-theme) and system prefers light */
       @media (prefers-color-scheme: light) {
@@ -51,6 +55,10 @@
           --badge-green-bg: #dcfce7;
           --badge-red-bg: #fee2e2;
           --badge-gray-bg: #e5e7eb;
+          --danger-bg: #dc2626;
+          --danger-soft-bg: #fee2e2;
+          --danger-text: #ffffff;
+          --danger-soft-text: #991b1b;
         }
       }
       /* Explicit theme overrides */
@@ -75,6 +83,10 @@
         --badge-green-bg: #064e3b;
         --badge-red-bg: #7f1d1d;
         --badge-gray-bg: #374151;
+        --danger-bg: #b91c1c;
+        --danger-soft-bg: #7f1d1d;
+        --danger-text: #ffffff;
+        --danger-soft-text: #fecaca;
       }
       [data-theme="light"] {
         --bg: #f8fafc;
@@ -97,6 +109,10 @@
         --badge-green-bg: #dcfce7;
         --badge-red-bg: #fee2e2;
         --badge-gray-bg: #e5e7eb;
+        --danger-bg: #dc2626;
+        --danger-soft-bg: #fee2e2;
+        --danger-text: #ffffff;
+        --danger-soft-text: #991b1b;
       }
 
       /* Styles using variables */
@@ -118,6 +134,8 @@
       .pane { background: var(--pane-bg); border:1px solid var(--border); border-radius: 12px; padding:12px; }
       button { background: var(--primary-bg); border:none; color:white; padding:8px 10px; border-radius:8px; cursor:pointer; }
       button.secondary { background: var(--secondary-bg); color: var(--secondary-text); }
+      button.danger { background: var(--danger-bg); color: var(--danger-text); }
+      button.secondary.danger { background: var(--danger-soft-bg); color: var(--danger-soft-text); }
       button.icon { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
       button.icon.active { background: var(--tab-active-bg); }
       select, textarea, input { background: var(--input-bg); color: var(--text); border:1px solid var(--border); border-radius:8px; padding:6px; width:100%; }

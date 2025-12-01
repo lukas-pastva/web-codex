@@ -298,6 +298,22 @@ app.post("/api/git/commitPush", async (req, res) => {
   }
 });
 
+app.post("/api/git/discard", async (req, res) => {
+  try {
+    const { repoPath } = req.body;
+    if (!repoPath) return res.status(400).json({ error: "repoPath is required" });
+    const git = simpleGit(repoPath);
+    // Reset tracked files and drop untracked (non-ignored) files/dirs
+    await git.raw(["reset", "--hard"]);
+    await git.raw(["clean", "-fd"]);
+    const status = await git.status();
+    res.json({ ok: true, status });
+  } catch (err) {
+    if (DEBUG) console.error("discard error:", formatErr(err));
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // ---- Git status (working tree) ----
 app.get("/api/git/status", async (req, res) => {
